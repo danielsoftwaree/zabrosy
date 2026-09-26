@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Link, Outlet, HeadContent, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router'
-import { NavigationArrow } from '@phosphor-icons/react/dist/csr/NavigationArrow'
 import { List } from '@phosphor-icons/react/dist/csr/List'
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft'
 import { Notebook } from '@phosphor-icons/react/dist/csr/Notebook'
@@ -10,6 +9,7 @@ import { UserCircle } from '@phosphor-icons/react/dist/csr/UserCircle'
 import { MapTrifold } from '@phosphor-icons/react/dist/csr/MapTrifold'
 import { SyncManager } from '../modules/account/sync-status'
 import { AppStatus } from '../app/status'
+import { DesktopFrame } from '../app/desktop-frame'
 import { ScreenAwake } from '../shared/platform/screen-awake'
 import { Sheet } from '../shared/ui'
 import { useFieldStore } from '../shared/storage'
@@ -33,20 +33,33 @@ export const Route = createRootRoute({
   component: Root,
 })
 
+const desktopQuery = '(min-width: 900px)'
+function subscribeDesktop(onChange: () => void) {
+  const media = window.matchMedia(desktopQuery)
+  media.addEventListener('change', onChange)
+  return () => media.removeEventListener('change', onChange)
+}
+function desktopSnapshot() {
+  return window.self === window.top
+    && new URLSearchParams(window.location.search).get('markerFrame') !== '1'
+    && window.matchMedia(desktopQuery).matches
+}
+
 function Root() {
+  const desktop = useSyncExternalStore(subscribeDesktop, desktopSnapshot, () => false)
+  return <Document>{desktop ? <DesktopFrame /> : <MobileApp />}</Document>
+}
+
+function MobileApp() {
   const [menu, setMenu] = useState(false)
   const pathname = useRouterState({ select: state => state.location.pathname })
   const field = pathname === '/' || pathname === import.meta.env.BASE_URL
   const { data } = useFieldStore()
   const session = data.sessions.find(item => item.id === data.activeSessionId)
   const count = data.casts.filter(cast => cast.sessionId === session?.id).length
-  return <Document>
-    <div className={`app-shell${field ? ' app-shell--field' : ''}`}><SyncManager />
+  return <div className={`app-shell${field ? ' app-shell--field' : ''}`}><SyncManager />
       <header className="app-header">
-        {field ? <Link to="/" className="brand" aria-label="Маркер — главная">
-          <span className="brand-mark"><NavigationArrow size={23} /></span>
-          <span><strong>маркер</strong><small>{session?.name ?? 'У воды · новый промер'}</small></span>
-        </Link> : <Link to="/" className="page-back" aria-label="Промер"><span className="circle"><ArrowLeft size={22} /></span><span>К промеру</span></Link>}
+        {!field && <Link to="/" className="page-back" aria-label="Промер"><span className="circle"><ArrowLeft size={22} /></span><span>К промеру</span></Link>}
         <nav className="header-actions" aria-label="Основная навигация">
           <Link to="/journal" className="circle" aria-label="Журнал"><Notebook size={22} />{count > 0 && <span className="badge">{count}</span>}</Link>
           <button className="circle" aria-label="Меню и настройки" onClick={() => setMenu(true)}><List size={23} /></button>
@@ -66,7 +79,6 @@ function Root() {
         <p className="menu-note">Промеры сохраняются на этом устройстве. Резервные копии — в журнале.</p>
       </Sheet>
     </div>
-  </Document>
 }
 
 function Document({ children }: { children: ReactNode }) {

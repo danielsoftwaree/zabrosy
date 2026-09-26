@@ -3,14 +3,17 @@ import { Drop } from '@phosphor-icons/react/dist/csr/Drop'
 import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight'
 import { Check } from '@phosphor-icons/react/dist/csr/Check'
 import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise'
+import { CaretUp } from '@phosphor-icons/react/dist/csr/CaretUp'
+import { CaretDown } from '@phosphor-icons/react/dist/csr/CaretDown'
 import { Button, Sheet } from '../../shared/ui'
+import { useFieldUi } from '../../shared/ui/field-ui'
 import { bottomLabels, type BottomKind, type Coordinate, type Draft, type FieldData } from '../../shared/model'
 import { useFieldStore } from '../../shared/storage'
 import { addMark, bottom, calibrationFromInput, changeMarkNote, changeMarkTurns, decimal, interrupt, newDraft, newSession, removeMark, sameFrame, setTurns, skipFall, targetDirection, toCast, water } from './domain'
 import { SectorView } from './sector-view'
 import './survey.css'
 
-type Props = { target?: Coordinate | null; surface?: ReactNode }
+type Props = { target?: Coordinate | null; surface?: ReactNode; footer?: ReactNode | null }
 const message = (error: unknown) => error instanceof Error ? error.message : 'Не удалось сохранить изменение.'
 const marks = Object.keys(bottomLabels) as BottomKind[]
 
@@ -26,8 +29,10 @@ function TapAction({ children, onActivate, className = '' }: { children: ReactNo
   return <button type="button" className={`survey-tap ${className}`} onPointerDown={(event) => { down.current = { id: event.pointerId, at: performance.now() } }} onPointerUp={release} onPointerCancel={() => { down.current = null }} onClick={(event) => { if (event.detail === 0) onActivate(performance.now()) }}>{children}</button>
 }
 
-export function SurveyPanel({ target, surface }: Props) {
+export function SurveyPanel({ target, surface, footer }: Props) {
   const { data, loading, error: storageError, update } = useFieldStore()
+  const dockExpanded = useFieldUi((state) => state.expanded)
+  const setDockExpanded = useFieldUi((state) => state.setExpanded)
   const [angleOverride, setAngleOverride] = useState<{ sessionId: string | null; value: string } | null>(null)
   const [lineOverride, setLineOverride] = useState<{ sessionId: string | null; value: string } | null>(null)
   const [turnsText, setTurnsText] = useState('')
@@ -212,6 +217,8 @@ export function SurveyPanel({ target, surface }: Props) {
   const castNumber = sessionCasts.length + 1
   const lastMark = draft?.marks.at(-1)
   const distance = draft?.completeRetrieve ? Math.round(draft.totalTurns * draft.calibration.metersPerTurn * 10) / 10 : null
+  const compactDock = Boolean(surface) && !dockExpanded && stage !== 'retrieve'
+  const shownFooter = stage === 'idle' || stage === 'armed' ? footer : null
 
   return <div className={`survey-panel survey-panel--${stage}${surface ? ' survey-panel--map' : ''}`}>
     <h1 className="survey-visually-hidden">Промер</h1>
@@ -219,7 +226,7 @@ export function SurveyPanel({ target, surface }: Props) {
       {surface ?? <SectorView casts={visibleCasts} draft={draft} hiddenCount={sessionCasts.length - visibleCasts.length} previewDirectionDeg={!draft && previewDirection !== null && previewDirection >= -180 && previewDirection <= 180 ? previewDirection : null} previewLineM={previewLine ?? 30} onAimChange={draft ? undefined : chooseAim} />}
     </div>
     {(storageError || problem || notice) && <div className={`survey-toast ${storageError || problem ? 'survey-toast--error' : ''}`} role={storageError || problem ? 'alert' : 'status'}>{storageError || problem || notice}</div>}
-    <section className="survey-dock" aria-label="Управление промером">
+    {shownFooter == null ? <section className={`survey-dock${compactDock ? ' survey-dock--compact' : ''}`} aria-label="Управление промером">
       <div className="survey-dock-handle" aria-hidden="true" />
       {!draft && <>
         <div className="survey-dock-line"><button type="button" className="survey-eyebrow" aria-label={`Заброс #${castNumber}, ${session?.name ?? 'новая сессия'}. Выбрать сессию`} onClick={() => setSheet('session')}>Заброс #{castNumber}</button><button type="button" className="survey-subtle" onClick={() => setSheet('calibration')}>Катушка: {session?.calibration.source !== 'measured' ? '≈ ' : ''}{Math.round((session?.calibration.metersPerTurn ?? .8) * 100)} см/об.</button></div>
@@ -246,7 +253,8 @@ export function SurveyPanel({ target, surface }: Props) {
         <div className="survey-dock-footer"><button type="button" onClick={() => setSheet('marks')}>Отметки · {draft.marks.length}</button><button type="button" onClick={cancel}>Отменить заброс</button></div>
       </>}
       {stage === 'review' && draft && <><div className="survey-dock-line"><span className="survey-eyebrow">Проверка · #{castNumber}</span><span className="survey-small">{draft.totalTurns} об. · {draft.marks.length} отмет.</span></div><p className="survey-dock-message">{distance === null ? 'Длина лески неизвестна до полной подмотки.' : `≈ ${distance} м лески по оборотам, не дальность на карте.`}</p><Button className="survey-primary" type="button" onClick={() => setSheet('review')}>Проверить и сохранить</Button><div className="survey-dock-footer"><button type="button" onClick={() => { void changeDraft((current) => ({ ...current, stage: 'retrieve' })) }}>К подмотке</button><button type="button" onClick={cancel}>Отменить заброс</button></div></>}
-    </section>
+      {surface && stage !== 'retrieve' && <button type="button" className="survey-dock-toggle" aria-expanded={dockExpanded} aria-label={dockExpanded ? 'Свернуть параметры промера' : 'Показать параметры промера'} onClick={() => setDockExpanded(!dockExpanded)}>{dockExpanded ? 'Свернуть' : 'Параметры'}{dockExpanded ? <CaretDown size={16} aria-hidden="true" /> : <CaretUp size={16} aria-hidden="true" />}</button>}
+    </section> : shownFooter}
     <Sheet open={sheet !== null} onOpenChange={(open) => { if (!open) setSheet(null) }} title={{ session: 'Сессия', calibration: 'Катушка', distance: 'Примерная длина лески', direction: 'Направление заброса', turns: 'Обороты ручки', marks: 'Отметки протяжки', review: 'Проверь заброс' }[sheet ?? 'session']}>
       {(problem || storageError) && <p className="survey-sheet-error" role="alert">{problem || storageError}</p>}
       {sheet === 'session' && <div className="survey-sheet-body"><label className="survey-field">Сессия<select value={session?.id ?? ''} onChange={(event) => { const id = event.target.value; void mutate((current) => ({ ...current, activeSessionId: id || null })).then((saved) => { if (saved) setSheet(null) }) }}>{!session && <option value="">Новая сессия</option>}{data.sessions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><Button type="button" onClick={() => { void mutate((current) => { const created = newSession(); return { ...current, sessions: [...current.sessions, created], activeSessionId: created.id } }).then((saved) => { if (saved) setSheet(null) }) }}>Новая сессия</Button></div>}

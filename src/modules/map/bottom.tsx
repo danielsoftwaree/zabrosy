@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { SlidersHorizontal } from '@phosphor-icons/react/dist/csr/SlidersHorizontal'
 import type { Cast, ChartDataset, Coordinate } from '../../shared/model'
+import { Sheet } from '../../shared/ui'
 import { distanceMeters, localMeters } from './geometry'
 import { convexHull, estimateDepth } from './depth-model'
 
@@ -15,7 +17,9 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
   const [dataset, setDataset] = useState('own')
   const [model, setModel] = useState(false)
   const [gap, setGap] = useState(25)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const chart = charts.find(item => item.id === dataset)
+  const modeName = mode === 'plan' ? 'Сверху' : mode === 'profile' ? 'По дальности' : '3D схема'
   const allPoints: DepthPoint[] = chart ? chart.points.map((point, i) => ({ id: String(i), position: point.position, meters: point.depthM, source: chart.source, observedAt: chart.importedAt })) : observedDepths(casts)
   // ponytail: SVG preview is bounded; use tiled rendering if chart imports need more than 1000 simultaneous points.
   const points = allPoints.slice(0, 1000)
@@ -42,12 +46,9 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
   const plane = [[-maxAxis, -maxAxis], [maxAxis, -maxAxis], [maxAxis, maxAxis], [-maxAxis, maxAxis]].map(([east, north]) => project3(east, north, 0))
   const color = (depth: number) => `hsl(192 32% ${83 - depth / maxDepth * 37}%)`
   return <section className="map-bottom">
-    <label className="map-camera__manual">Источник глубин<select value={dataset} onChange={event => { setDataset(event.target.value); setModel(false) }}><option value="own">Мои промеры этой рыбалки</option>{charts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    {chart && <p className="map-hint">{chart.source} · отсчёт: {chart.verticalDatum}. Карточные значения показаны отдельно от сегодняшних измерений.</p>}
-    <div className="map-view-switch" role="group" aria-label="Вид измерений">
-      <button aria-pressed={mode === 'plan'} onClick={() => setMode('plan')}>Сверху</button>
-      <button aria-pressed={mode === 'profile'} onClick={() => setMode('profile')}>По дальности</button>
-      <button aria-pressed={mode === 'space'} onClick={() => setMode('space')}>3D схема</button>
+    <div className="map-bottom__toolbar">
+      <div className="map-bottom__summary"><strong>{modeName}</strong><span>{chart?.name ?? 'Мои промеры этой рыбалки'}</span></div>
+      <button type="button" className="map-bottom__settings" aria-label="Настройки рельефа" title="Настройки рельефа" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={21} /></button>
     </div>
     {!points.length ? <div className="map-bottom__empty">Пока нет глубин с подтверждённым положением. Добавьте глубину в журнале и подтвердите её привязку к точке или импортируйте точки карты. Секунды падения остаются секундами.</div> : <>
       <svg className="map-bottom__plot" viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`${mode === 'plan' ? 'План' : mode === 'profile' ? 'Глубина по дальности' : 'Объёмная схема'} ${points.length} точек глубин`}>
@@ -71,13 +72,23 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
           {positions.map(point => { const top = project3(point.east, point.north, 0), bottom = project3(point.east, point.north, point.meters); return <g key={point.id}><line x1={top.x} y1={top.y} x2={bottom.x} y2={bottom.y} className="map-bottom__stem" /><circle cx={bottom.x} cy={bottom.y} r="5" className="map-bottom__point"><title>{point.meters.toFixed(1)} м</title></circle>{points.length <= 30 && <text x={Math.min(280, bottom.x + 8)} y={bottom.y - 8} className="map-bottom__label">{point.meters.toFixed(1)} м</text>}</g> })}
         </>}
       </svg>
+      <p className="map-hint">Показано {points.length} из {allPoints.length} точек. {model && mode !== 'profile' ? cells.length ? 'Оценка поверхности: цветные участки предположительны. ' : 'Оценка поверхности включена, данных для окраски недостаточно. ' : ''}{mode === 'space' ? `Вертикальный масштаб ×${(125 * maxAxis / (104 * maxDepth)).toFixed(1)} относительно горизонтального. ` : ''}{mode === 'profile' ? 'Точки разных направлений показаны по дальности, это не непрерывный разрез дна. ' : ''}Положение глубин подтверждено пользователем; точность координат не оценена.</p>
+    </>}
+    <Sheet open={settingsOpen} onOpenChange={setSettingsOpen} title="Настройки рельефа">
+      <fieldset className="map-bottom__choices"><legend>Вид</legend>
+        {([['plan', 'Сверху'], ['profile', 'По дальности'], ['space', '3D схема']] as const).map(([value, label]) => <label key={value}><input type="radio" name="bottom-view" checked={mode === value} onChange={() => setMode(value)} /><span>{label}</span></label>)}
+      </fieldset>
+      <fieldset className="map-bottom__choices"><legend>Источник глубин</legend>
+        <label><input type="radio" name="bottom-source" checked={dataset === 'own'} onChange={() => { setDataset('own'); setModel(false) }} /><span>Мои промеры этой рыбалки</span></label>
+        {charts.map(item => <label key={item.id}><input type="radio" name="bottom-source" checked={dataset === item.id} onChange={() => { setDataset(item.id); setModel(false) }} /><span>{item.name}</span></label>)}
+      </fieldset>
+      {chart && <p className="map-hint">{chart.source} · отсчёт: {chart.verticalDatum}. Карточные значения показаны отдельно от сегодняшних измерений.</p>}
       {mode === 'space' && <label className="map-bottom__rotation">Поворот схемы: {rotation}°<input type="range" min="0" max="360" value={rotation} onChange={event => setRotation(Number(event.target.value))} /></label>}
-      <p className="map-hint">Показано {points.length} из {allPoints.length} точек. {mode === 'space' ? `Вертикальный масштаб ×${(125 * maxAxis / (104 * maxDepth)).toFixed(1)} относительно горизонтального. ` : ''}{mode === 'profile' ? 'Точки разных направлений показаны по дальности, это не непрерывный разрез дна. ' : ''}Положение глубин подтверждено пользователем; точность координат не оценена.</p>
-      {points.length >= 3 && <details className="depth-model-options"><summary>Предполагаемая поверхность</summary>
+      {points.length >= 3 && <div className="map-bottom__model"><strong>Предполагаемая поверхность</strong>
         <p className="map-hint">Взвешенная оценка по соседним глубинам внутри области точек. Берега автоматически не распознаются. Включайте только для одного водного участка с сопоставимым уровнем воды.</p>
         <label className="survey-check"><input type="checkbox" checked={model} onChange={event => setModel(event.target.checked)} />Точки одного водного участка и уровня воды — показать оценку</label>
-        {model && <><label className="map-camera__manual">Искать соседей не дальше {gap} м<input type="range" min="5" max="100" step="5" value={gap} onChange={event => setGap(Number(event.target.value))} /></label><p className="map-hint">Цветные участки — предположение, не измерения. Пустые места не заполнены: данных недостаточно. Числовая погрешность не оценена.</p></>}
-      </details>}
-    </>}
+        {model && <><label className="map-bottom__rotation">Искать соседей не дальше {gap} м<input type="range" min="5" max="100" step="5" value={gap} onChange={event => setGap(Number(event.target.value))} /></label><p className="map-hint">Цветные участки — предположение, не измерения. Пустые места не заполнены: данных недостаточно. Числовая погрешность не оценена.</p></>}
+      </div>}
+    </Sheet>
   </section>
 }

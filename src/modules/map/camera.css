@@ -1,0 +1,51 @@
+.map-panel .map-panel__surface > .map-camera {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 14px;
+}
+
+.camera-stage {
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #1d2924;
+  color: white;
+  padding: 12px;
+}
+
+.camera-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.camera-stage__top { position: relative; z-index: 2; align-self: stretch; display: flex; align-items: start; justify-content: space-between; gap: 6px; }
+.camera-stage__readouts { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+.camera-stage__label, .camera-stage__target { max-width: 100%; padding: 6px 8px; border-radius: 9px; background: #10251cba; font-size: 11px; line-height: 1.25; font-weight: 650; }
+.camera-stage__target { background: #f9fcf7ed; color: #18594a; }
+.camera-stage__tools { flex: none; display: flex; gap: 5px; }
+.camera-stage__tool { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid #ffffff8c; border-radius: 50%; background: #f9fcf7ed; color: #18594a; cursor: pointer; }
+.camera-stage__cross { position: absolute; z-index: 1; top: 50%; left: 50%; width: 48px; height: 48px; transform: translate(-50%, -50%); filter: drop-shadow(0 1px 5px #0009); }
+.camera-stage__prompt { position: relative; z-index: 2; display: grid; justify-items: center; gap: 10px; margin: auto 0 4px; text-align: center; }
+.camera-stage__prompt p { max-width: 25ch; margin: 0; font-size: 13px; line-height: 1.4; text-shadow: 0 1px 5px #000; }
+.camera-stage__prompt .button { min-height: 46px; border-radius: 14px; padding: 10px 15px; background: #d8f285; color: #193c36; }
+.camera-stage__control { position: relative; z-index: 2; align-self: center; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; max-width: 100%; padding: 8px 14px; border: 1px solid #ffffff80; border-radius: 13px; background: #10251cd9; color: white; font-size: 13px; font-weight: 700; cursor: pointer; }
+.camera-stage button:focus-visible { outline: 3px solid #e09033; outline-offset: 2px; }
+
+.camera-sheet { display: grid; gap: 13px; padding-bottom: 8px; }
+.camera-sheet .button { justify-self: stretch; min-height: 48px; }
+.camera-sheet__state { margin: 0; color: #677f78; font-size: 13px; }
+.camera-sheet__manual { display: grid; gap: 8px; color: #193c36; font-size: 14px; font-weight: 650; }
+.camera-sheet__manual input { width: 100%; height: 44px; accent-color: #18594a; }
+.camera-sheet .map-hint { margin: 0; }
+
+@media (max-height: 650px) {
+  .map-panel--embedded .map-panel__surface > .map-camera { padding-top: 84px; }
+  .camera-stage { min-height: 150px; padding: 8px; }
+  .camera-stage__prompt { gap: 6px; }
+  .camera-stage__prompt p { font-size: 12px; }
+}

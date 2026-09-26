@@ -1,4 +1,4 @@
-// Hand-written shape of the two tables in supabase/migrations/202609260001_survey_cloud.sql.
+// Hand-written shape of the two tables in supabase/migrations/20260926094535_survey_cloud.sql.
 // Keep it in sync with that migration until database type generation is configured.
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json }
 type BaseRow = { id: string; owner_id: string; document: Json; revision: number; updated_at: string; deleted_at: string | null }

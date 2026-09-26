@@ -40,19 +40,31 @@
 .sector-draft { stroke: #ba6340; }
 .sector-target { fill: #d8f285; stroke: #18594a; stroke-width: 2; }
 .sector-draft-label { fill: #18594a; font-size: 11px; text-anchor: middle; font-weight: 700; }
-.survey-sector-info { position: absolute; z-index: 1; top: calc(144px + env(safe-area-inset-top)); left: 19px; max-width: min(245px, calc(100% - 115px)); pointer-events: none; display: grid; justify-items: start; gap: 5px; }
+.survey-sector-info { position: absolute; z-index: 1; top: calc(84px + env(safe-area-inset-top)); left: 19px; max-width: min(245px, calc(100% - 115px)); pointer-events: none; display: grid; justify-items: start; gap: 5px; }
 .survey-sector-info span { background: #f9fcf7dd; padding: 4px 8px; border-radius: 8px; color: #677f78; font-size: 10px; font-weight: 750; letter-spacing: .11em; }
 .survey-sector-info small { background: #f9fcf7dd; padding: 5px 8px; border-radius: 8px; color: #496c61; font-size: 11px; line-height: 1.4; }
-.survey-sector-rail { position: absolute; z-index: 2; top: calc(145px + env(safe-area-inset-top)); right: 16px; display: grid; gap: 9px; }
+.survey-sector-rail { position: absolute; z-index: 2; top: calc(84px + env(safe-area-inset-top)); right: 16px; display: grid; gap: 9px; }
 .survey-sector-rail > button, .survey-sector-zoom button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #d1ddd4; border-radius: 50%; background: #ffffffed; color: #18594a; cursor: pointer; box-shadow: 0 3px 13px #103b2910; }
 .survey-sector-rail button:disabled { opacity: .45; }
 .survey-sector-zoom { display: grid; border: 1px solid #d1ddd4; background: #ffffffed; border-radius: 19px; overflow: hidden; }
 .survey-sector-zoom button { border: 0; border-radius: 0; box-shadow: none; }
 .survey-sector-zoom button + button { border-top: 1px solid #d1ddd4; }
-.survey-sector-error { position: absolute; z-index: 2; top: 198px; right: 15px; max-width: 210px; background: #fff0e9; color: #7f2e24; border-radius: 10px; padding: 8px; font-size: 12px; }
+.survey-sector-error { position: absolute; z-index: 2; top: 138px; right: 15px; max-width: 210px; background: #fff0e9; color: #7f2e24; border-radius: 10px; padding: 8px; font-size: 12px; }
 
 .survey-dock { position: absolute; z-index: 5; bottom: 0; left: 0; right: 0; padding: 15px 18px calc(14px + env(safe-area-inset-bottom)); background: #fbfcf8fb; border-top: 1px solid #d5e1d6; border-radius: 28px 28px 0 0; box-shadow: 0 -10px 45px #1d463916; }
 .survey-dock-handle { width: 32px; height: 3px; background: #d6e1d8; border-radius: 3px; margin: -5px auto 12px; }
+.survey-dock-toggle { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-height: 44px; margin-top: 6px; border: 0; background: transparent; color: #18594a; font-size: 12px; font-weight: 700; cursor: pointer; }
+.survey-panel--map .survey-dock--compact { display: grid; grid-template-columns: minmax(0, 1fr) 92px; align-items: center; gap: 8px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+.survey-dock--compact > .survey-dock-handle, .survey-dock--compact > .survey-dock-line, .survey-dock--compact > .survey-metrics, .survey-dock--compact > .survey-dock-caption, .survey-dock--compact > .survey-dock-footer, .survey-dock--compact > .survey-dock-message { display: none; }
+.survey-dock--compact > .survey-primary, .survey-dock--compact > .survey-tap, .survey-dock--compact > .survey-dock-stack { grid-column: 1; grid-row: 1; }
+.survey-dock--compact > .survey-dock-toggle { grid-column: 2; grid-row: 1; width: 92px; min-height: 52px; margin: 0; }
+.survey-dock--compact .survey-primary.button { min-height: 52px; border-radius: 15px; font-size: 15px; }
+.survey-dock--compact .survey-dock-stack > .button + .button { display: none; }
+.survey-dock--compact .survey-tap { flex-direction: row; height: 52px; padding: 6px 8px; gap: 7px; border-radius: 15px; }
+.survey-dock--compact .survey-tap svg { width: 22px; height: 22px; flex: none; }
+.survey-dock--compact .survey-tap strong { font-size: 15px; }
+.survey-dock--compact .survey-tap small { display: none; }
+.survey-dock--compact .survey-timer { font-size: 23px; }
 .survey-dock-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 25px; margin-bottom: 10px; }
 .survey-dock-line button { border: 0; background: transparent; cursor: pointer; }
 .survey-eyebrow { font-size: 10px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; color: #677f78; padding: 0; text-align: left; }
@@ -90,7 +102,7 @@
 .survey-feel-grid button { min-height: 45px; min-width: 0; border: 1px solid #dce4d9; background: white; border-radius: 13px; display: flex; justify-content: center; align-items: center; gap: 5px; font-size: 12px; font-weight: 620; cursor: pointer; }
 .survey-feel-dot { width: 7px; height: 7px; border-radius: 50%; background: #c87938; flex: none; }
 .survey-feel-dot--silt { background: #8d7668; }.survey-feel-dot--sand { background: #d5a968; }.survey-feel-dot--gravel { background: #758779; }.survey-feel-dot--shell { background: #a694ae; }.survey-feel-dot--weed { background: #75a36f; }.survey-feel-dot--edge { background: #b47b59; }
-.survey-toast { position: absolute; z-index: 8; top: calc(133px + env(safe-area-inset-top)); left: 18px; right: 18px; border-radius: 16px; padding: 11px 14px; background: #173d35; color: white; box-shadow: 0 7px 24px #0d30232a; font-size: 13px; line-height: 1.4; }
+.survey-toast { position: absolute; z-index: 8; top: calc(84px + env(safe-area-inset-top)); left: 18px; right: 18px; border-radius: 16px; padding: 11px 14px; background: #173d35; color: white; box-shadow: 0 7px 24px #0d30232a; font-size: 13px; line-height: 1.4; }
 .survey-toast--error { background: #8a382b; }
 .survey-sheet-body { display: grid; gap: 13px; padding-bottom: 8px; }
 .survey-sheet-error { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: #fff0e9; color: #7f2e24; font-size: 13px; line-height: 1.4; }
