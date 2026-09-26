@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 
 async function stubOrtho(page: Page) {
   await page.route('https://mapy.geoportal.gov.pl/**', route => route.fulfill({
@@ -7,6 +7,61 @@ async function stubOrtho(page: Page) {
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200"><rect width="1200" height="1200" fill="#bfd3ba"/></svg>',
   }))
 }
+
+test('recentring on the same orthophoto keeps it ready for selecting a point', async ({ page }) => {
+  await stubOrtho(page)
+  await page.goto('map')
+  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
+  await expect.poll(() => page.locator('.field-map__image').evaluate(image =>
+    (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+  )).toBe(true)
+  const source = await page.locator('.field-map__image').getAttribute('src')
+  await page.getByRole('button', { name: 'К станции' }).click()
+  await expect(page.locator('.field-map__image')).toHaveAttribute('src', source!)
+  const map = page.getByRole('button', { name: /Снимок участка/ })
+  const box = await map.boundingBox()
+  if (!box) throw new Error('Map is not visible')
+  await map.click({ position: { x: box.width * .25, y: box.height * .5 } })
+  await expect(page.locator('.map-footer[aria-label="Выбранная точка"]')).toBeVisible()
+  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
+})
+
+test('orthophoto provider failure offers a retry that restores the image', async ({ page }) => {
+  let available = false
+  const paths: string[] = []
+  await page.route('https://mapy.geoportal.gov.pl/**', async route => {
+    paths.push(new URL(route.request().url()).pathname)
+    if (!available) return route.abort()
+    await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200"/>' })
+  })
+  await page.goto('map')
+  await expect(page.locator('.field-map__fallback')).toContainText('Снимок недоступен')
+  expect(paths.some(path => path.endsWith('/HighResolution'))).toBe(true)
+  expect(paths.some(path => path.endsWith('/StandardResolution'))).toBe(true)
+  available = true
+  await page.getByRole('button', { name: 'Повторить загрузку' }).click()
+  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
+  await expect(page.locator('.field-map__image')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Повторить загрузку' })).toHaveCount(0)
+})
+
+test('a stalled high-resolution orthophoto falls back to standard resolution', async ({ page }) => {
+  await page.clock.install()
+  const stalled: Route[] = []
+  let standardRequests = 0
+  await page.route('https://mapy.geoportal.gov.pl/**', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/HighResolution')) { stalled.push(route); return }
+    standardRequests += 1
+    return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200"/>' })
+  })
+  await page.goto('map')
+  await expect.poll(() => stalled.length).toBeGreaterThan(0)
+  await page.clock.fastForward(8100)
+  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
+  await expect(page.locator('.field-map__image')).toBeVisible()
+  expect(standardRequests).toBeGreaterThan(0)
+  await Promise.all(stalled.map(route => route.abort().catch(() => undefined)))
+})
 
 test('manual coordinates save station and target when imagery is unavailable', async ({ page }) => {
   await page.route('https://mapy.geoportal.gov.pl/**', route => route.abort())

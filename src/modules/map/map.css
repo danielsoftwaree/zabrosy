@@ -65,6 +65,7 @@
 .map-panel--embedded .map-panel__info { top: 84px; }
 .map-panel__info strong, .map-panel__info p { display: block; width: fit-content; max-width: 100%; margin: 0 0 5px; padding: 5px 7px; border-radius: 7px; background: #f9fcf7de; color: #496c61; font-size: 11px; line-height: 1.3; }
 .map-panel__info strong { color: #5d7569; font-size: 10px; letter-spacing: .1em; }
+.map-panel__info .map-panel__retry { min-height: 36px; margin-top: 3px; padding: 6px 10px; border: 1px solid #cbd9cd; border-radius: 9px; background: #f9fcf7f2; color: #18594a; font-size: 12px; font-weight: 700; pointer-events: auto; cursor: pointer; }
 .map-panel__info .map-panel__target { border: 0; font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .map-panel__rail { position: absolute; z-index: 4; top: 132px; right: 15px; display: grid; gap: 8px; }
 .map-panel--embedded .map-panel__rail { top: 84px; }

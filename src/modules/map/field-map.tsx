@@ -49,8 +49,9 @@ export function MapPanel({ view: controlledView, children }: Props) {
   const [candidate, setCandidate] = useState<Coordinate | null>(null)
   const [latitude, setLatitude] = useState(String(CEGIELINKA.lat))
   const [longitude, setLongitude] = useState(String(CEGIELINKA.lon))
-  const [imageResolution, setImageResolution] = useState<'HighResolution' | 'StandardResolution'>('HighResolution')
-  const [imageStatus, setImageStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [imageRetry, setImageRetry] = useState(0)
+  const [imageElement, setImageElement] = useState<HTMLImageElement | null>(null)
+  const [imageResult, setImageResult] = useState<{ key: string; element: HTMLImageElement; status: 'ready' | 'error' } | null>(null)
   const [positionStatus, setPositionStatus] = useState('')
   const [actionError, setActionError] = useState('')
   const session = data.sessions.find((item) => item.id === data.activeSessionId) ?? null
@@ -62,9 +63,17 @@ export function MapPanel({ view: controlledView, children }: Props) {
   const bounds: MapBounds = { west: squareBounds.west, east: squareBounds.east,
     south: fromLocalMeters(center, 0, -verticalSpan).lat, north: fromLocalMeters(center, 0, verticalSpan).lat }
   const pixelWidth = Math.min(1200, Math.round(1800 * frameSize.width / frameSize.height))
-  const imageUrl = new URL(orthoUrl(bounds, imageResolution))
-  imageUrl.searchParams.set('WIDTH', String(pixelWidth))
-  imageUrl.searchParams.set('HEIGHT', String(Math.round(pixelWidth * frameSize.height / frameSize.width)))
+  function imageUrl(resolution: 'HighResolution' | 'StandardResolution') {
+    const url = new URL(orthoUrl(bounds, resolution))
+    url.searchParams.set('WIDTH', String(pixelWidth))
+    url.searchParams.set('HEIGHT', String(Math.round(pixelWidth * frameSize.height / frameSize.width)))
+    if (imageRetry) url.searchParams.set('_retry', String(imageRetry))
+    return url.toString()
+  }
+  const highUrl = imageUrl('HighResolution')
+  const standardUrl = imageUrl('StandardResolution')
+  const imageKey = highUrl
+  const imageStatus = imageResult?.key === imageKey && imageResult.element === imageElement ? imageResult.status : 'loading'
   const visibleCasts = data.casts.filter((cast) => cast.sessionId === session?.id && cast.target)
   const targetBearing = station && target ? bearingDegrees(station, target) : null
   const targetDistance = station && target ? distanceMeters(station, target) : null
@@ -77,11 +86,47 @@ export function MapPanel({ view: controlledView, children }: Props) {
       if (frameSizeRef.current.width === width && frameSizeRef.current.height === height) return
       frameSizeRef.current = { width, height }
       setFrameSize({ width, height })
-      setImageStatus('loading')
     })
     observer.observe(frameRef.current)
     return () => observer.disconnect()
   }, [activeView])
+
+  useEffect(() => {
+    if (activeView !== 'aerial' || !imageElement) return
+    const image = imageElement
+    let active = true
+    let timer: number | undefined
+    function load(src: string, fallback: boolean) {
+      let finished = false
+      function finish(success: boolean) {
+        if (finished || !active) return
+        finished = true
+        window.clearTimeout(timer)
+        image.onload = null
+        image.onerror = null
+        if (success) setImageResult({ key: imageKey, element: image, status: 'ready' })
+        else {
+          if (fallback) {
+            image.src = 'data:,'
+            setImageResult({ key: imageKey, element: image, status: 'error' })
+          }
+          else load(standardUrl, true)
+        }
+      }
+      image.onload = () => finish(image.naturalWidth > 1 && image.naturalHeight > 1)
+      image.onerror = () => finish(false)
+      timer = window.setTimeout(() => finish(false), fallback ? 20000 : 8000)
+      image.src = src
+    }
+    load(highUrl, false)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+      image.onload = null
+      image.onerror = null
+      image.src = 'data:,'
+    }
+  }, [activeView, imageElement, highUrl, standardUrl, imageKey])
 
   function mapTap(event: MouseEvent<HTMLDivElement>) {
     if (locked || imageStatus !== 'ready') return
@@ -108,8 +153,6 @@ export function MapPanel({ view: controlledView, children }: Props) {
     setCandidate(point)
     setDrawer('point')
     setCenter(point)
-    setImageResolution('HighResolution')
-    setImageStatus('loading')
     setActionError('')
   }
 
@@ -188,15 +231,11 @@ export function MapPanel({ view: controlledView, children }: Props) {
       setLongitude(coords.longitude.toFixed(7))
       setCandidate(null)
       setPositionStatus(`Положение устройства · точность ±${Math.round(coords.accuracy)} м. Это ещё не сохранённая станция.`)
-      setImageStatus('loading')
-      setImageResolution('HighResolution')
     }, () => setPositionStatus('Геолокация недоступна. Можно ввести координаты вручную.'), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 })
   }
 
   function pan(east: number, north: number) {
     setCenter(fromLocalMeters(center, east * halfSpan, north * halfSpan))
-    setImageStatus('loading')
-    setImageResolution('HighResolution')
   }
 
   const surface = activeView === 'sector' ? null : <section className={`map-panel ${embedded ? 'map-panel--embedded' : 'map-panel--standalone'}${drawer !== 'survey' ? ' map-panel--selecting' : ''}`} aria-label="Карта участка">
@@ -210,20 +249,21 @@ export function MapPanel({ view: controlledView, children }: Props) {
     <div className="map-panel__surface">
       {activeView === 'aerial' && <>
         <div ref={frameRef} className="field-map__frame" onClick={mapTap} role="button" tabIndex={0} aria-label="Снимок участка. Коснитесь, чтобы отметить точку" onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && imageStatus === 'ready' && !locked) { event.preventDefault(); setCandidate(center); setLatitude(center.lat.toFixed(7)); setLongitude(center.lon.toFixed(7)); setDrawer('point'); setActionError('') } }}>
-          {imageStatus !== 'error' && <img className="field-map__image" src={imageUrl.toString()} alt="Ортофото выбранного участка" referrerPolicy="no-referrer" onLoad={() => setImageStatus('ready')} onError={() => { if (imageResolution === 'HighResolution') { setImageResolution('StandardResolution'); setImageStatus('loading') } else setImageStatus('error') }} />}
-          {imageStatus !== 'ready' && <div className="field-map__fallback">{imageStatus === 'error' ? 'Снимок недоступен. Откройте точку и введите координаты.' : 'Загружаем снимок…'}</div>}
+          <img key={imageKey} ref={setImageElement} className="field-map__image" alt="Ортофото выбранного участка" referrerPolicy="no-referrer" style={{ visibility: imageStatus === 'ready' ? 'visible' : 'hidden' }} />
+          {imageStatus !== 'ready' && <div className="field-map__fallback">{imageStatus === 'error' ? 'Снимок недоступен. Повторите загрузку или введите координаты вручную.' : 'Загружаем снимок…'}</div>}
           <ImageryOverlay bounds={bounds} station={station} referenceBearingDeg={session?.station.referenceBearingDeg ?? null} target={target} casts={visibleCasts} candidate={candidate} />
         </div>
         <div className="map-panel__top-shade" aria-hidden="true" />
         <div className="map-panel__info"><strong>ОРТОФОТО · GUGiK</strong>
           <p>{imageStatus === 'error' ? 'Снимок недоступен · координаты вручную' : 'Выберите точку на снимке · дно здесь не показано'}</p>
+          {imageStatus === 'error' && <button type="button" className="map-panel__retry" onClick={() => setImageRetry((attempt) => attempt + 1)}>Повторить загрузку</button>}
           {target && <p className="map-panel__target">Цель {target.lat.toFixed(6)}, {target.lon.toFixed(6)}{targetDistance !== null ? ` · ≈${Math.round(targetDistance)} м от станции` : ''}</p>}
         </div>
         <div className="map-panel__rail" role="group" aria-label="Управление снимком">
           <button type="button" onClick={locate} disabled={embedded && locked} aria-label="Моя позиция" title="Моя позиция"><Gps size={21} /></button>
-          <button type="button" onClick={() => { setCenter(station ?? CEGIELINKA); setImageStatus('loading') }} aria-label="К станции" title="К станции"><Target size={21} /></button>
-          <div className="map-panel__zoom"><button type="button" onClick={() => { setHalfSpan(Math.max(25, halfSpan / 2)); setImageStatus('loading') }} aria-label="Приблизить"><Plus size={20} /></button>
-            <button type="button" onClick={() => { setHalfSpan(Math.min(2000, halfSpan * 2)); setImageStatus('loading') }} aria-label="Отдалить"><Minus size={20} /></button></div>
+          <button type="button" onClick={() => setCenter(station ?? CEGIELINKA)} aria-label="К станции" title="К станции"><Target size={21} /></button>
+          <div className="map-panel__zoom"><button type="button" onClick={() => setHalfSpan(Math.max(25, halfSpan / 2))} aria-label="Приблизить"><Plus size={20} /></button>
+            <button type="button" onClick={() => setHalfSpan(Math.min(2000, halfSpan * 2))} aria-label="Отдалить"><Minus size={20} /></button></div>
           <button type="button" onClick={() => { setCandidate(null); setActionError(''); setDrawer('coordinates') }} disabled={embedded && locked} aria-label="Точка и настройки" title="Точка и настройки"><SlidersHorizontal size={21} /></button>
         </div>
         <p className="field-map__source">Ортофото © <a href="https://www.geoportal.gov.pl/pl/dane/ortofotomapa-orto/" target="_blank" rel="noopener noreferrer">GUGiK / Geoportal</a></p>
