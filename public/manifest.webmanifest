@@ -1,0 +1,14 @@
+{
+  "name": "Маркер",
+  "short_name": "Маркер",
+  "description": "Полевой журнал промеров с берега",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#e7eeeb",
+  "theme_color": "#18594a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

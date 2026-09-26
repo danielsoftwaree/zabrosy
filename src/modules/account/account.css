@@ -1,0 +1,8 @@
+.account-card { padding: 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.account-card p { color: var(--muted); line-height: 1.5; }
+.account-label { margin-top: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; }
+.account-card form { display: grid; gap: 11px; }
+.account-card label { margin-top: 7px; font-weight: 650; }
+.account-card input { width: 100%; min-height: 46px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 11px; background: white; }
+.account-card .button { justify-self: start; margin-top: 6px; }
+.account-message { color: var(--accent); }

@@ -1,0 +1,45 @@
+{
+  "name": "marker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "node tooling/build.mjs",
+    "build:pages": "node tooling/build-pages.mjs",
+    "start": "node .output/server/index.mjs",
+    "typecheck": "tsr generate && tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --config tooling/vitest.config.ts",
+    "test:e2e": "playwright test --config tooling/playwright.config.ts",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build",
+    "predev": "node tooling/portable-build.mjs"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@supabase/supabase-js": "^2.58.0",
+    "@tanstack/react-router": "^1.168.58",
+    "@tanstack/react-start": "^1.168.58",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@playwright/test": "^1.63.0",
+    "@tanstack/router-cli": "^1.167.38",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.3.0",
+    "nitro": "^3.0.0-beta.1",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
+  }
+}
