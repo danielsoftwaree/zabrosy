@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('AR range needs a live rear-camera frame, explicit height, stable calibration and keeps a labelled capture', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 })
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
       getUserMedia: async () => new MediaStream(),
@@ -47,6 +48,8 @@ test('AR range needs a live rear-camera frame, explicit height, stable calibrati
   await expect(page.locator('.camera-last-range')).toContainText('≈9 м')
   await expect(page.locator('.camera-last-range')).toContainText('Интервал')
   await expect(page.locator('.camera-last-range')).toContainText('калибровка по горизонту')
+  await page.getByRole('button', { name: 'Выключить камеру' }).click()
+  await expect(page.getByText('Камера выключена')).toBeVisible()
   await page.getByRole('button', { name: 'Снимок' }).click()
   await page.getByRole('button', { name: 'Камера' }).click()
   await expect(page.locator('.camera-last-range')).toContainText('≈9 м')

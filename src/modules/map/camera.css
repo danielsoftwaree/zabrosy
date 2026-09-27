@@ -61,9 +61,10 @@
 .camera-sheet__guidance[open] { display: grid; gap: 10px; }
 
 @media (max-height: 650px) {
+  .map-panel .map-panel__surface > .map-camera { overflow-y: auto; }
   .map-panel--embedded .map-panel__surface > .map-camera { padding-top: 84px; }
-  .camera-stage { min-height: 150px; }
-  .camera-stage__viewfinder { min-height: 80px; padding: 8px; }
+  .camera-stage { min-height: 280px; flex-shrink: 0; }
+  .camera-stage__viewfinder { min-height: 110px; padding: 8px; }
   .camera-stage__prompt { gap: 6px; }
   .camera-stage__prompt p { font-size: 12px; }
   .camera-stage__range { gap: 4px; padding: 6px; }
