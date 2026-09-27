@@ -67,6 +67,7 @@ test('a prepared photo maps a selected water point and rejects the outside area'
   await page.getByRole('button', { name: 'Снимок' }).click()
   await page.getByRole('button', { name: 'Измерить между точками' }).click()
   await page.getByRole('button', { name: 'Камера' }).click()
+  await page.getByRole('button', { name: 'Фото', exact: true }).click()
   await expect(page.getByText('От снимка к фото')).toBeVisible()
   await expect(page.locator('canvas.photo-canvas')).toHaveCount(0)
 })

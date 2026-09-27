@@ -9,7 +9,7 @@ test('map tools leave room for the image at 320 pixels', async ({ page }) => {
   const frame = page.locator('.field-map__frame')
   const footer = page.getByRole('region', { name: 'Измерение на карте' })
   await expect(footer.getByRole('button', { name: 'Закрыть' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Участок для фото' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Участок для камеры' })).toBeInViewport()
   const imageBounds = await frame.boundingBox()
   const footerBounds = await footer.boundingBox()
   expect(imageBounds?.height).toBeGreaterThan(280)

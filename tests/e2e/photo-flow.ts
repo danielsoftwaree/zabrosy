@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
-/** Complete the same map preparation a user needs before marking a photograph. */
-export async function preparePhotoArea(page: Page) {
+/** Prepare the map area shared by photo and live camera registration. */
+export async function preparePhotoArea(page: Page, mode: 'photo' | 'live' = 'photo') {
   const map = page.getByRole('button', { name: /Снимок участка/ })
   await expect(map).toBeVisible()
   const touch = async (x: number, y: number) => {
@@ -14,15 +14,18 @@ export async function preparePhotoArea(page: Page) {
   await expect(page.locator('.map-hint')).toContainText('Теперь отметьте второй берег')
   await touch(.7, .35)
   await expect(page.locator('.map-footer__distance')).toContainText('м')
-  await page.getByRole('button', { name: 'Привязать фото' }).click()
+  await page.getByRole('button', { name: /Привязать (фото|камеру)/ }).click()
   const anchors = [[.3, .55], [.7, .55], [.7, .35], [.3, .35]]
   const nextStep = ['Ближняя кромка воды: точка справа', 'Дальняя кромка воды: точка справа', 'Дальняя кромка воды: точка слева', 'Выберите эти же четыре точки']
   for (let index = 0; index < anchors.length; index++) {
     await touch(anchors[index][0], anchors[index][1])
     await expect(page.locator('.map-hint')).toContainText(nextStep[index])
   }
-  await page.getByRole('button', { name: 'Перейти к фото' }).click()
-  await expect(page.getByText('Снимите оба берега')).toBeVisible()
+  await page.getByRole('button', { name: /Перейти к (фото|камере)/ }).click()
+  if (mode === 'photo') {
+    await page.getByRole('button', { name: 'Фото', exact: true }).click()
+    await expect(page.getByText('Снимите оба берега')).toBeVisible()
+  } else await expect(page.getByText('Участок на живой камере')).toBeVisible()
 }
 
 export async function uploadSamplePhoto(page: Page) {

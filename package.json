@@ -24,6 +24,7 @@
     "@tanstack/react-router": "^1.168.58",
     "@tanstack/react-start": "^1.168.58",
     "fflate": "0.8.2",
+    "jsfeat": "0.0.8",
     "ol": "^10.10.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

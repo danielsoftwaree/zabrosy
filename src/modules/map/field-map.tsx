@@ -233,7 +233,7 @@ export function MapPanel({ view: controlledView, children }: Props) {
           <Button type="button" tone="quiet" onClick={locate} disabled={embedded && locked} aria-label="Моя позиция" title="Моя позиция"><Gps size={21} /></Button>
           <Button type="button" tone="quiet" onClick={() => mapApi.current?.centerAt(station ?? CEGIELINKA)} aria-label="К станции" title="К станции"><Target size={21} /></Button>
           <Button type="button" tone="quiet" onClick={() => startTool('distance')} aria-pressed={tools.mode === 'distance'} aria-label="Измерить между точками" title="Измерить между точками"><Ruler size={21} /></Button>
-          <Button type="button" tone="quiet" onClick={() => startTool('photo')} aria-pressed={tools.mode === 'photo'} aria-label="Участок для фото" title="Участок для фото"><Camera size={21} /></Button>
+          <Button type="button" tone="quiet" onClick={() => startTool('photo')} aria-pressed={tools.mode === 'photo'} aria-label="Участок для камеры" title="Участок для камеры"><Camera size={21} /></Button>
           <div className="map-panel__zoom"><Button type="button" tone="quiet" onClick={() => mapApi.current?.zoom(.5)} aria-label="Приблизить"><Plus size={20} /></Button>
             <Button type="button" tone="quiet" onClick={() => mapApi.current?.zoom(2)} aria-label="Отдалить"><Minus size={20} /></Button></div>
           <Button type="button" tone="quiet" onClick={() => { setCandidate(null); setActionError(''); setDrawer('coordinates') }} disabled={embedded && locked} aria-label="Точка и настройки" title="Точка и настройки"><SlidersHorizontal size={21} /></Button>
@@ -251,12 +251,12 @@ export function MapPanel({ view: controlledView, children }: Props) {
   </section>
 
   const footer = activeView !== 'aerial' || (!tools.mode && drawer === 'survey') ? null : tools.mode ? <section className="map-footer map-footer--measure" aria-label="Измерение на карте">
-    <div className="map-footer__head"><strong>{tools.mode === 'distance' ? 'Между двумя точками' : `Участок для фото · ${Math.min(4, tools.points.length + 1)} / 4`}</strong><Button tone="quiet" onClick={tools.clear}>Закрыть</Button></div>
+    <div className="map-footer__head"><strong>{tools.mode === 'distance' ? 'Между двумя точками' : `Участок для камеры · ${Math.min(4, tools.points.length + 1)} / 4`}</strong><Button tone="quiet" onClick={tools.clear}>Закрыть</Button></div>
     <p className="map-hint">{tools.mode === 'distance' ? tools.points.length === 0 ? 'Коснитесь своего места на берегу — это начало замера.' : tools.points.length === 1 ? 'Теперь отметьте второй берег или любую цель на воде.' : 'Расстояние по карте между точками А и Б.' : ['Ближняя кромка воды: точка слева.', 'Ближняя кромка воды: точка справа.', 'Дальняя кромка воды: точка справа.', 'Дальняя кромка воды: точка слева.'][tools.points.length] ?? 'Выберите эти же четыре точки на фото. Все точки должны лежать на уровне воды.'}</p>
     {tools.mode === 'distance' && tools.points.length === 2 && <strong className="map-footer__distance">≈ {Math.round(distanceMeters(tools.points[0], tools.points[1]))} м</strong>}
     <div className="map-footer__actions"><Button tone="quiet" onClick={tools.undo} disabled={!tools.points.length}>{tools.mode === 'distance' && tools.points.length === 2 ? 'Убрать второй берег' : 'Отменить точку'}</Button>
-      {tools.mode === 'distance' && tools.points.length === 2 && <Button onClick={() => { const origin = tools.points[0]; tools.start('photo', origin) }}>Привязать фото</Button>}
-      {tools.mode === 'photo' && tools.points.length === 4 && <Button disabled={!areaValid} onClick={showCamera}>Перейти к фото</Button>}</div>
+      {tools.mode === 'distance' && tools.points.length === 2 && <Button onClick={() => { const origin = tools.points[0]; tools.start('photo', origin) }}>Привязать камеру</Button>}
+      {tools.mode === 'photo' && tools.points.length === 4 && <Button disabled={!areaValid} onClick={showCamera}>Перейти к камере</Button>}</div>
     {tools.mode === 'photo' && tools.points.length === 4 && !areaValid && <p className="map-error">Участок пересекается или слишком узкий. Отмените последнюю точку и выберите шире.</p>}
   </section> : <section className="map-footer" aria-label={drawer === 'point' ? 'Выбранная точка' : 'Координаты и навигация'}>
     <div className="map-footer__handle" aria-hidden="true" />

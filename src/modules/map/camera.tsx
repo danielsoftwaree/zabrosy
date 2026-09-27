@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
 import { Camera } from '@phosphor-icons/react/dist/csr/Camera'
+import { MapTrifold } from '@phosphor-icons/react/dist/csr/MapTrifold'
 import { Button } from '../../shared/ui'
 import type { Coordinate } from '../../shared/model'
-import { distanceMeters, localMeters } from './geometry'
+import { distanceMeters } from './geometry'
+import { LiveCamera } from './live-camera'
+import { AnchorGuide } from './camera-guide'
 import { photoProjection, type PhotoPoint } from './photo-geometry'
 import { useMapTools } from './map-tools'
 import './camera.css'
@@ -16,21 +19,8 @@ type Props = {
   onTarget(point: Coordinate): void
 }
 
-function AnchorGuide({ anchors, station, current }: { anchors: Coordinate[]; station: Coordinate; current: number }) {
-  const local = anchors.map(p => localMeters(station, p))
-  const center = local.reduce((sum, p) => ({ east: sum.east + p.east / 4, north: sum.north + p.north / 4 }), { east: 0, north: 0 })
-  const angle = Math.atan2(center.east, center.north)
-  const rotated = local.map(p => ({ x: p.east * Math.cos(angle) - p.north * Math.sin(angle), y: -(p.east * Math.sin(angle) + p.north * Math.cos(angle)) }))
-  const extent = Math.max(1, ...rotated.map(p => Math.max(Math.abs(p.x), Math.abs(p.y))))
-  const points = rotated.map(p => ({ x: 100 + p.x / extent * 70, y: 100 + p.y / extent * 75 }))
-  return <svg className="photo-anchor-guide" viewBox="0 0 200 120" role="img" aria-label="Схема четырёх точек. Ваше место снизу, дальний берег сверху">
-    <polygon points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="#edf3e7" stroke="#18594a" strokeWidth="1.5" />
-    {points.map((p, i) => <g key={i}><circle cx={p.x} cy={p.y} r="10" fill={i === current ? '#d8f285' : '#fbfcf8'} stroke="#18594a" /><text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fill="#18594a">{i + 1}</text></g>)}
-    <circle cx="100" cy="108" r="3" fill="#18594a" /><text x="109" y="112" fontSize="10" fill="#18594a">Вы</text>
-  </svg>
-}
 
-export function CameraView({ active, station, anchors, onChooseMap, onPrepareArea, onTarget }: Props) {
+function PhotoView({ active, station, anchors, onChooseMap, onPrepareArea, onTarget }: Props) {
   const video = useRef<HTMLVideoElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const stream = useRef<MediaStream | null>(null)
@@ -217,5 +207,26 @@ export function CameraView({ active, station, anchors, onChooseMap, onPrepareAre
       </div>
       <p className="photo-note">Оценка по плоскости воды. Точность зависит от снимка, выбора одинаковых точек и уровня воды. Глубину и траекторию груза фото не измеряет.</p>
     </>}
+  </section>
+}
+
+export function CameraView(props: Props) {
+  const photo = useMapTools(state => state.photo)
+  const [mode, setMode] = useState<'live' | 'photo'>(photo ? 'photo' : 'live')
+  const ready = props.anchors.length === 4 && props.station !== null
+  return <section className="map-camera camera-container" aria-label="Камера и привязка к карте">
+    <div className="camera-mode-controls" aria-label="Режим камеры">
+      <Button tone={mode === 'live' ? 'primary' : 'quiet'} aria-pressed={mode === 'live'} onClick={() => setMode('live')}>Живая камера</Button>
+      <Button tone={mode === 'photo' ? 'primary' : 'quiet'} aria-pressed={mode === 'photo'} onClick={() => setMode('photo')}>Фото</Button>
+      {mode === 'live' && ready && <Button className="camera-area-button" tone="quiet" aria-label="Изменить участок" title="Изменить участок" onClick={props.onPrepareArea}><MapTrifold size={21} aria-hidden="true" /></Button>}
+    </div>
+    {mode === 'photo' ? <PhotoView {...props} /> : ready ? <>
+      <LiveCamera active={props.active} station={props.station!} anchors={props.anchors} onTarget={props.onTarget} />
+    </> : <div className="photo-intro"><Camera size={36} aria-hidden="true" /><h2>Участок на воде</h2>
+      <p>Выберите своё место и участок на снимке, затем совместите его с камерой. На воде появятся линии расстояний от вас.</p>
+      <Button onClick={props.onChooseMap}>Выбрать место на карте</Button>
+      <p>Для привязки нужны четыре узнаваемые точки у воды: по две на ближней и дальней кромке.</p>
+      <Button tone="quiet" onClick={props.onPrepareArea}>Выбрать участок</Button>
+    </div>}
   </section>
 }
