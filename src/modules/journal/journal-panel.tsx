@@ -332,7 +332,7 @@ export function JournalPanel({ onBack }: { onBack?: () => void } = {}) {
         {(data.legacyBackups ?? []).length > 0 && <div className="journal-legacy"><h3>Исходные старые копии</h3><p>Сохранены без изменений для повторного импорта и проверки неперенесённых полей.</p>{data.legacyBackups!.map((backup) => <div className="journal-chart" key={backup.id}><span><strong>{backup.name}</strong><small>{new Date(backup.importedAt).toLocaleString('ru-RU')}</small></span><Button type="button" tone="quiet" onClick={() => download(`marker-legacy-${backup.id}.json`, backup.source, 'application/json;charset=utf-8')}>Скачать исходник</Button></div>)}</div>}
       </details>
 
-      <details className="journal-section journal-secondary" aria-label="Точки глубин">
+      <details id="depths" className="journal-section journal-secondary" aria-label="Точки глубин">
         <summary>Точки глубин <span>GeoJSON · {data.charts.length}</span></summary>
         <p>Принимаются только Point с числовым полем <code>depthM</code>, <code>depth_m</code> или <code>depth</code> в метрах. Это исходные точки, не готовая карта рельефа. Для S-57 нужен отдельный конвертер и проверка источника.</p>
         <div className="journal-form">

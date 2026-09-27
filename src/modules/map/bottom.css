@@ -1,0 +1,19 @@
+.depth-explorer { position: relative; flex: 1 1 auto; min-height: 220px; overflow: hidden; border-radius: 16px; }
+.map-panel--embedded .depth-explorer { min-height: 0; }
+.depth-explorer .map-bottom__plot { width: 100%; height: 100%; min-height: 220px; max-height: none; aspect-ratio: auto; touch-action: none; cursor: grab; }
+.map-panel--embedded .depth-explorer .map-bottom__plot { min-height: 0; }
+.depth-explorer .map-bottom__plot:active { cursor: grabbing; }
+.depth-explorer__fit { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--accent); cursor: pointer; }
+.depth-explorer__hint { position: absolute; bottom: 8px; left: 8px; right: 8px; margin: 0; color: #496455; font-size: 10px; line-height: 1.4; pointer-events: none; }
+.depth-explorer__point { position: absolute; left: 8px; right: 8px; bottom: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); }
+.depth-explorer__point strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.depth-explorer__point span, .depth-explorer__point small { grid-column: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.depth-explorer__point button { grid-column: 2; grid-row: 1 / 4; align-self: center; min-height: 44px; border: 0; background: transparent; color: var(--accent); cursor: pointer; }
+.depth-summary { flex: none; margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.depth-sources h3 { margin: 22px 0 8px; font-size: 17px; }
+.depth-sources h3:first-child { margin-top: 4px; }
+.depth-sources p { margin: 8px 0 14px; font-size: 14px; line-height: 1.55; }
+.depth-sources .depth-sources__note { color: var(--muted); font-size: 12px; }
+.depth-sources__link { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 0; border-bottom: 1px solid var(--line); color: var(--accent); font-weight: 650; font-size: 14px; text-decoration: none; }
+.depth-sources__link svg { flex: none; }
+.depth-sources__open { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--accent); font-size: 14px; font-weight: 700; cursor: pointer; }

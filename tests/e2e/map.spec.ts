@@ -11,13 +11,11 @@ async function stubOrtho(page: Page) {
 test('recentring on the same orthophoto keeps it ready for selecting a point', async ({ page }) => {
   await stubOrtho(page)
   await page.goto('map')
-  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
-  await expect.poll(() => page.locator('.field-map__image').evaluate(image =>
-    (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
-  )).toBe(true)
-  const source = await page.locator('.field-map__image').getAttribute('src')
+  const frame = page.locator('.field-map__frame')
+  await expect(frame).toHaveAttribute('data-imagery-status', 'ready')
+  await expect(frame.locator('canvas')).toBeVisible()
   await page.getByRole('button', { name: 'К станции' }).click()
-  await expect(page.locator('.field-map__image')).toHaveAttribute('src', source!)
+  await expect(frame).toHaveAttribute('data-imagery-status', 'ready')
   const map = page.getByRole('button', { name: /Снимок участка/ })
   const box = await map.boundingBox()
   if (!box) throw new Error('Map is not visible')
@@ -40,8 +38,8 @@ test('orthophoto provider failure offers a retry that restores the image', async
   expect(paths.some(path => path.endsWith('/StandardResolution'))).toBe(true)
   available = true
   await page.getByRole('button', { name: 'Повторить загрузку' }).click()
-  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
-  await expect(page.locator('.field-map__image')).toBeVisible()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await expect(page.locator('.field-map__frame canvas')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Повторить загрузку' })).toHaveCount(0)
 })
 
@@ -57,10 +55,70 @@ test('a stalled high-resolution orthophoto falls back to standard resolution', a
   await page.goto('map')
   await expect.poll(() => stalled.length).toBeGreaterThan(0)
   await page.clock.fastForward(8100)
-  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
-  await expect(page.locator('.field-map__image')).toBeVisible()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await expect(page.locator('.field-map__frame canvas')).toBeVisible()
   expect(standardRequests).toBeGreaterThan(0)
   await Promise.all(stalled.map(route => route.abort().catch(() => undefined)))
+})
+
+test('drag, wheel and pinch move the canvas without selecting a point', async ({ page }) => {
+  const bounds: string[] = []
+  await page.route('https://mapy.geoportal.gov.pl/**', route => {
+    const box = new URL(route.request().url()).searchParams.get('BBOX')
+    if (box) bounds.push(box)
+    return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200"/>' })
+  })
+  await page.goto('map')
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  const initialScale = await page.locator('.ol-scale-line-inner').innerText()
+  const initial = bounds.at(-1)!
+  const map = page.getByRole('button', { name: /Снимок участка/ })
+  const box = await map.boundingBox()
+  if (!box) throw new Error('Map canvas is missing')
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + box.width * .36, y, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(() => bounds.at(-1)).not.toBe(initial)
+  await expect(page.locator('.map-footer[aria-label="Выбранная точка"]')).toHaveCount(0)
+  const afterPan = bounds.at(-1)!
+  await page.mouse.move(x, y)
+  await page.mouse.wheel(0, -700)
+  await expect.poll(() => bounds.at(-1)).not.toBe(afterPan)
+  const span = (value: string) => { const [west, , east] = value.split(',').map(Number); return east - west }
+  expect(span(bounds.at(-1)!)).toBeLessThan(span(afterPan))
+  const beforePinch = bounds.at(-1)!
+  const cdp = await page.context().newCDPSession(page)
+  const touch = (left: number, right: number) => [{ x: left, y, id: 1 }, { x: right, y, id: 2 }]
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: touch(x - 25, x + 25) })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: touch(x - 90, x + 90) })
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect.poll(() => bounds.at(-1)).not.toBe(beforePinch)
+  expect(span(bounds.at(-1)!)).toBeLessThan(span(beforePinch))
+  await expect(page.locator('.map-footer[aria-label="Выбранная точка"]')).toHaveCount(0)
+  await expect.poll(() => page.locator('.ol-scale-line-inner').innerText()).not.toBe(initialScale)
+  const zoomedScale = await page.locator('.ol-scale-line-inner').innerText()
+  await page.getByRole('button', { name: 'Камера' }).click()
+  await page.getByRole('button', { name: 'Снимок' }).click()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await expect(page.locator('.ol-scale-line-inner')).toHaveText(zoomedScale)
+})
+
+test('image source can switch to Esri with its attribution', async ({ page }) => {
+  await stubOrtho(page)
+  let esriRequests = 0
+  await page.route('https://services.arcgisonline.com/**', route => {
+    esriRequests += 1
+    return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"/>' })
+  })
+  await page.goto('map')
+  await page.getByRole('button', { name: 'Точка и настройки' }).click()
+  await page.getByRole('radio', { name: 'Esri · World Imagery' }).check()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await expect(page.locator('.field-map__source')).toContainText('Esri')
+  expect(esriRequests).toBeGreaterThan(0)
 })
 
 test('manual coordinates save station and target when imagery is unavailable', async ({ page }) => {
@@ -102,7 +160,16 @@ test('a selected map point survives creating the first session', async ({ page }
   await point.getByRole('button', { name: 'Создать сессию' }).click()
   await expect(point.locator('.map-footer__position')).toHaveText(coordinate)
   await point.getByRole('button', { name: 'Это станция' }).click()
-  await expect(page.locator('.field-map__marker--station')).toBeVisible()
+  await expect(point).toHaveCount(0)
+  await page.reload()
+  await page.getByRole('button', { name: 'Снимок' }).click()
+  await page.getByRole('button', { name: 'Точка и настройки' }).click()
+  const coordinates = page.locator('.map-footer[aria-label="Координаты и навигация"]')
+  await coordinates.getByRole('textbox', { name: 'Широта' }).fill('53.3866857')
+  await coordinates.getByRole('textbox', { name: 'Долгота' }).fill('14.6200000')
+  await coordinates.getByRole('button', { name: 'Выбрать точку' }).click()
+  await expect(point.locator('.map-footer__distance')).toContainText('От станции ≈')
+  await expect(point.getByRole('button', { name: 'Это ориентир' })).toBeEnabled()
 })
 
 test('camera refusal keeps a saved target available for manual guidance', async ({ page }) => {
@@ -137,6 +204,7 @@ test('camera refusal keeps a saved target available for manual guidance', async 
   await expect(page.getByText('Камера недоступна. Можно наводиться вручную.')).toBeVisible()
   await page.locator('.camera-stage').getByRole('button', { name: 'Настройки наведения' }).click()
   const settings = page.getByRole('dialog', { name: 'Настройки наведения' })
+  await settings.locator('summary').filter({ hasText: 'Наведение на цель по карте' }).click()
   const bearing = settings.getByRole('slider', { name: /Поворот от ориентира вручную/ })
   await expect(bearing).toBeVisible()
   await bearing.focus()

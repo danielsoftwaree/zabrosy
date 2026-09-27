@@ -73,7 +73,7 @@ test('GeoJSON depth points keep source and datum and appear in the bottom map', 
   await expect(settings.getByText(/Тестовый промер · отсчёт: Ноль источника/)).toBeVisible()
   await settings.getByRole('button', { name: 'Закрыть' }).click()
   await expect(page.getByRole('img', { name: 'План 3 точек глубин' })).toBeVisible()
-  await expect(page.getByText('Показано 3 из 3 точек.', { exact: false })).toBeVisible()
+  await expect(page.locator('.depth-summary')).toContainText('3 из 3 точек')
   await page.reload()
   await page.getByRole('group', { name: 'Представление карты' }).getByRole('button', { name: 'Дно' }).click()
   await page.getByRole('button', { name: 'Настройки рельефа' }).click()
