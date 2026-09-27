@@ -10,6 +10,9 @@ import VectorSource from 'ol/source/Vector.js'
 import Feature from 'ol/Feature.js'
 import Point from 'ol/geom/Point.js'
 import LineString from 'ol/geom/LineString.js'
+import Polygon from 'ol/geom/Polygon.js'
+import GeoJSON from 'ol/format/GeoJSON.js'
+import { encFeatureCollection, type EncChart } from './enc-chart'
 import { defaults as defaultInteractions } from 'ol/interaction/defaults.js'
 import { defaults as defaultControls, ScaleLine } from 'ol/control.js'
 import { unByKey } from 'ol/Observable.js'
@@ -39,11 +42,16 @@ type Props = {
   referenceBearingDeg: number | null
   target: Coordinate | null
   casts: Cast[]
+  encChart?: EncChart | null
+  depthPoints?: { position: Coordinate; meters: number }[]
+  toolPoints?: Coordinate[]
+  toolMode?: 'distance' | 'photo' | null
   candidate: Coordinate | null
   locked: boolean
   onPick(point: Coordinate): void
   onStatus(status: MapImageStatus): void
   onWidth(meters: number): void
+  onCenter(point: Coordinate): void
 }
 
 const coords = ({ lon, lat }: Coordinate) => fromLonLat([lon, lat])
@@ -63,7 +71,7 @@ function lineStyle(color: string, dash: number[]) {
   return new Style({ stroke: new Stroke({ color, width: 2, lineDash: dash }) })
 }
 
-function features({ station, referenceBearingDeg, target, casts, candidate }: Pick<Props, 'station' | 'referenceBearingDeg' | 'target' | 'casts' | 'candidate'>) {
+function features({ station, referenceBearingDeg, target, casts, candidate, toolPoints = [], toolMode }: Pick<Props, 'station' | 'referenceBearingDeg' | 'target' | 'casts' | 'candidate' | 'toolPoints' | 'toolMode'>) {
   const result: Feature[] = []
   const addPoint = (position: Coordinate, style: Style) => {
     const feature = new Feature(new Point(coords(position)))
@@ -90,23 +98,51 @@ function features({ station, referenceBearingDeg, target, casts, candidate }: Pi
   if (station) addPoint(station, markerStyle(dark, 'БЕРЕГ'))
   if (target) addPoint(target, markerStyle('#d8f285', station ? `Цель · ≈${Math.round(distanceMeters(station, target))} м по карте` : 'Цель', 11))
   if (candidate) addPoint(candidate, markerStyle('#2d765abb', 'Выбрана точка', 13))
+  if (toolPoints.length > 1) {
+    const path = toolPoints.map(coords)
+    const feature = new Feature(toolPoints.length === 4 ? new Polygon([[...path, path[0]]]) : new LineString(path))
+    feature.setStyle(new Style({ stroke: new Stroke({ color: '#d8f285', width: 3 }), fill: new Fill({ color: '#d8f28525' }) }))
+    result.push(feature)
+  }
+  toolPoints.forEach((position, i) => addPoint(position, markerStyle('#d8f285', toolMode === 'distance' ? i ? 'Б · цель' : 'А · ваше место' : String(i + 1))))
   return result
 }
 
-export function CanvasMap({ apiRef, viewRef, provider, station, referenceBearingDeg, target, casts, candidate, locked, onPick, onStatus, onWidth }: Props) {
+function chartFeatures(chart: EncChart | null | undefined, depths: Props['depthPoints']) {
+  const result: Feature[] = chart ? new GeoJSON().readFeatures(encFeatureCollection(chart), { featureProjection: 'EPSG:3857' }) : []
+  for (const feature of result) {
+    const kind = feature.get('kind')
+    const depth = feature.get('depthM') as number | undefined
+    if (kind === 'area') {
+      const shallow = feature.get('shallowM') as number | null
+      feature.setStyle(new Style({ fill: new Fill({ color: shallow === null ? '#718d9525' : `hsla(195,55%,${Math.max(28, 72 - shallow * 4)}%,0.26)` }), stroke: new Stroke({ color: '#def1f270', width: .5 }) }))
+    } else if (kind === 'contour') feature.setStyle(new Style({ stroke: new Stroke({ color: '#ebfaffcc', width: 1.3 }), text: new Text({ text: `${depth} м`, placement: 'line', repeat: 180, font: '600 11px system-ui', fill: new Fill({ color: '#133f52' }), stroke: new Stroke({ color: '#fff', width: 3 }) }) }))
+    else feature.setStyle(markerStyle('#81d5e8', `${depth} м`, 4))
+  }
+  for (const sample of depths ?? []) {
+    const feature = new Feature(new Point(coords(sample.position)))
+    feature.setStyle(markerStyle('#81d5e8', `${sample.meters} м`, 4))
+    result.push(feature)
+  }
+  return result
+}
+
+export function CanvasMap({ apiRef, viewRef, provider, station, referenceBearingDeg, target, casts, candidate, toolPoints, toolMode, encChart, depthPoints, locked, onPick, onStatus, onWidth, onCenter }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const vectorRef = useRef<VectorSource | null>(null)
   const pickRef = useRef(onPick)
   const statusRef = useRef(onStatus)
   const widthRef = useRef(onWidth)
+  const centerRef = useRef(onCenter)
   const lockedRef = useRef(locked)
   useEffect(() => {
     pickRef.current = onPick
     statusRef.current = onStatus
     widthRef.current = onWidth
+    centerRef.current = onCenter
     lockedRef.current = locked
-  }, [onPick, onStatus, onWidth, locked])
+  }, [onPick, onStatus, onWidth, onCenter, locked])
 
   useEffect(() => {
     const host = hostRef.current
@@ -171,6 +207,7 @@ export function CanvasMap({ apiRef, viewRef, provider, station, referenceBearing
     const mapKeys: EventsKey[] = [
       map.on('singleclick', event => { if (!lockedRef.current) pickRef.current(point(event.coordinate)) }),
       map.on('moveend', () => {
+        centerRef.current(point(view.getCenter()!))
         const extent = view.calculateExtent(map.getSize())
         const west = point([extent[0], (extent[1] + extent[3]) / 2])
         const east = point([extent[2], (extent[1] + extent[3]) / 2])
@@ -204,8 +241,8 @@ export function CanvasMap({ apiRef, viewRef, provider, station, referenceBearing
 
   useEffect(() => {
     vectorRef.current?.clear()
-    vectorRef.current?.addFeatures(features({ station, referenceBearingDeg, target, casts, candidate }))
-  }, [station, referenceBearingDeg, target, casts, candidate])
+    vectorRef.current?.addFeatures([...chartFeatures(encChart, depthPoints), ...features({ station, referenceBearingDeg, target, casts, candidate, toolPoints, toolMode })])
+  }, [provider, station, referenceBearingDeg, target, casts, candidate, toolPoints, toolMode, encChart, depthPoints])
 
   function keyboard(event: KeyboardEvent<HTMLDivElement>) {
     const api = apiRef.current

@@ -7,7 +7,8 @@ test('empty depth view opens the official Odra chart without inventing depths', 
   await page.getByRole('button', { name: 'Карты глубин Одры', exact: true }).click()
   const sheet = page.getByRole('dialog', { name: 'Карты Одры · Щецин' })
   await expect(sheet.getByRole('link', { name: /Скачать официальный лист/ })).toHaveAttribute('href', 'https://www.szczecin.uzs.gov.pl/wp-content/uploads/2026/05/P17OD735.zip')
-  await expect(sheet).toContainText('этот ENC здесь ещё не отображается')
+  await expect(sheet.locator('input[type="file"][accept*=".000"]')).toBeAttached()
+  await expect(sheet).toContainText('области глубин появятся поверх снимка')
 })
 
 test('depth canvas selects observations and rotates the 3D view by dragging', async ({ page }) => {
@@ -27,6 +28,7 @@ test('depth canvas selects observations and rotates the 3D view by dragging', as
   let sheet = page.getByRole('dialog', { name: 'Настройки рельефа' })
   await sheet.getByRole('radio', { name: 'Проверка рельефа' }).check()
   await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(sheet).toHaveCount(0)
   const plot = page.locator('canvas.map-bottom__plot')
   await expect(plot).toBeVisible()
   await plot.focus()
@@ -39,6 +41,7 @@ test('depth canvas selects observations and rotates the 3D view by dragging', as
   await sheet.getByRole('radio', { name: '3D схема' }).check()
   await expect(sheet.getByRole('slider', { name: /Поворот схемы/ })).toHaveValue('35')
   await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(sheet).toHaveCount(0)
   const bounds = await plot.boundingBox()
   if (!bounds) throw new Error('Depth canvas unavailable')
   await page.mouse.move(bounds.x + bounds.width * .35, bounds.y + bounds.height * .5)

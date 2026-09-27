@@ -13,33 +13,10 @@
 .survey-surface { position: absolute; inset: 0; z-index: 0; }
 .survey-panel--map { display: flex; flex-direction: column; }
 .survey-panel--map .survey-surface { position: relative; inset: auto; flex: 1; min-height: 0; overflow: hidden; }
-.survey-panel--map .survey-dock { position: relative; flex: none; }
-.survey-sector-wrap { position: absolute; inset: 0; overflow: hidden; background: #e7eeeb; }
-.survey-sector { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: manipulation; }
-.sector-water { fill: #e7efea; }
-.sector-land { fill: #d4dfcf; }
-.sector-ring { fill: none; stroke: #bbd0bf; stroke-width: 1; }
-.sector-ring-label { fill: #759182; font-size: 10px; text-anchor: middle; }
-.sector-spoke { fill: none; stroke: #c3d5c8; stroke-width: 1; stroke-dasharray: 3 7; }
-.sector-spoke--zero { stroke: #8fb2a1; }
-.sector-station { fill: #18594a; stroke: white; stroke-width: 3; }
-.sector-station-core { fill: #e4f5b2; }
-.sector-you { fill: #527c63; font-size: 10px; font-weight: 750; text-anchor: middle; letter-spacing: .04em; }
-.sector-ray { fill: none; stroke: #2c715a; stroke-width: 2; }
-.sector-ray--unknown { stroke-dasharray: 5 5; opacity: .7; }
-.sector-end { fill: #d8f285; stroke: #18594a; stroke-width: 2; }
-.sector-cast-label { fill: #18594a; font-size: 11px; font-weight: 700; text-anchor: middle; }
-.sector-mark { fill: #c87938; stroke: white; stroke-width: 1.5; }
-.sector-mark--silt { fill: #8d7668; }
-.sector-mark--sand { fill: #d5a968; }
-.sector-mark--gravel { fill: #758779; }
-.sector-mark--shell { fill: #a694ae; }
-.sector-mark--weed { fill: #75a36f; }
-.sector-mark--edge { fill: #b47b59; }
-.sector-preview, .sector-draft { fill: none; stroke: #18594a; stroke-width: 2; stroke-dasharray: 5 5; }
-.sector-draft { stroke: #ba6340; }
-.sector-target { fill: #d8f285; stroke: #18594a; stroke-width: 2; }
-.sector-draft-label { fill: #18594a; font-size: 11px; text-anchor: middle; font-weight: 700; }
+.survey-panel--map .survey-dock { position: relative; flex: none; max-height: min(70dvh, calc(100dvh - 84px - env(safe-area-inset-top))); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.survey-sector-wrap { position: absolute; inset: 0; overflow: hidden; background: #e7eeeb; user-select: none; -webkit-user-select: none; }
+.survey-sector { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.survey-sector:focus-visible { outline: 3px solid #e09033; outline-offset: -5px; }
 .survey-sector-info { position: absolute; z-index: 1; top: calc(84px + env(safe-area-inset-top)); left: 19px; max-width: min(245px, calc(100% - 115px)); pointer-events: none; display: grid; justify-items: start; gap: 5px; }
 .survey-sector-info span { background: #f9fcf7dd; padding: 4px 8px; border-radius: 8px; color: #677f78; font-size: 10px; font-weight: 750; letter-spacing: .11em; }
 .survey-sector-info small { background: #f9fcf7dd; padding: 5px 8px; border-radius: 8px; color: #496c61; font-size: 11px; line-height: 1.4; }

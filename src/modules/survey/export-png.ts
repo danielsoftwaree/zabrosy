@@ -1,7 +1,10 @@
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const copiedStyles = ['fill', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-size', 'font-family', 'text-anchor'] as const
 
-export async function sectorToPng(svg: SVGSVGElement): Promise<Blob> {
+export async function sectorToPng(svg: SVGSVGElement | HTMLCanvasElement): Promise<Blob> {
+  if (svg instanceof HTMLCanvasElement) {
+    return await new Promise<Blob>((resolve, reject) => svg.toBlob((blob) => blob ? resolve(blob) : reject(new Error('PNG не создан.')), 'image/png'))
+  }
   const copy = svg.cloneNode(true) as SVGSVGElement
   copy.setAttribute('xmlns', SVG_NS)
   copy.setAttribute('width', '1200')

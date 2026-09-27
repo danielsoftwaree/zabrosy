@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { preparePhotoArea } from './photo-flow'
 
 async function stubOrtho(page: Page) {
   await page.route('https://mapy.geoportal.gov.pl/**', route => route.fulfill({
@@ -165,6 +166,7 @@ test('a selected map point survives creating the first session', async ({ page }
   await page.getByRole('button', { name: 'Снимок' }).click()
   await page.getByRole('button', { name: 'Точка и настройки' }).click()
   const coordinates = page.locator('.map-footer[aria-label="Координаты и навигация"]')
+  await coordinates.getByRole('button', { name: 'Ввести координаты вручную' }).click()
   await coordinates.getByRole('textbox', { name: 'Широта' }).fill('53.3866857')
   await coordinates.getByRole('textbox', { name: 'Долгота' }).fill('14.6200000')
   await coordinates.getByRole('button', { name: 'Выбрать точку' }).click()
@@ -172,7 +174,7 @@ test('a selected map point survives creating the first session', async ({ page }
   await expect(point.getByRole('button', { name: 'Это ориентир' })).toBeEnabled()
 })
 
-test('camera refusal keeps a saved target available for manual guidance', async ({ page }) => {
+test('camera refusal keeps photograph selection available', async ({ page }) => {
   await stubOrtho(page)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
@@ -180,41 +182,13 @@ test('camera refusal keeps a saved target available for manual guidance', async 
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
       getUserMedia: async () => { throw new DOMException('Denied', 'NotAllowedError') },
     } })
-    for (const name of ['DeviceOrientationEvent', 'DeviceMotionEvent']) {
-      Object.defineProperty(window, name, { configurable: true, value: { requestPermission: async () => 'denied' } })
-    }
   })
-  await page.goto('./')
-  await page.getByRole('button', { name: /Заброс #1/ }).click()
-  await page.getByRole('button', { name: 'Новая сессия' }).click()
-  await expect(page.getByRole('dialog', { name: 'Сессия' })).toBeHidden()
   await page.goto('map')
-  const map = page.getByRole('button', { name: /Снимок участка/ })
-  await expect(page.locator('.field-map__fallback')).toHaveCount(0)
-  const box = await map.boundingBox()
-  if (!box) throw new Error('Map is not visible')
-  await map.click({ position: { x: box.width * .25, y: box.height * .5 } })
-  await page.getByRole('button', { name: 'Это станция' }).click()
-  await map.click({ position: { x: box.width * .7, y: box.height * .5 } })
-  await page.getByRole('button', { name: 'Это ориентир' }).click()
-  await map.click({ position: { x: box.width * .8, y: box.height * .4 } })
-  await page.getByRole('button', { name: 'Сохранить цель' }).click()
-  await page.getByRole('button', { name: 'Камера' }).click()
-  await page.locator('.camera-stage').getByRole('button', { name: 'Включить камеру' }).click()
-  await expect(page.getByText('Камера недоступна. Проверьте разрешение и повторите.')).toBeVisible()
-  await page.locator('.camera-stage').getByRole('button', { name: 'Настройки наведения' }).click()
-  const settings = page.getByRole('dialog', { name: 'Настройки наведения' })
-  await settings.locator('summary').filter({ hasText: 'Наведение на цель по карте' }).click()
-  const bearing = settings.getByRole('slider', { name: /Поворот от ориентира вручную/ })
-  await expect(bearing).toBeVisible()
-  await bearing.focus()
-  await bearing.press('ArrowRight')
-  await expect(bearing).toHaveValue('1')
-  await settings.getByRole('button', { name: 'Включить ориентацию' }).click()
-  await expect(settings.getByText('Датчик недоступен · ручное наведение')).toBeVisible()
-  await settings.getByRole('button', { name: 'Закрыть' }).click()
-  await expect(page.locator('.camera-stage').getByRole('button', { name: 'Включить камеру' })).toBeVisible()
-  await expect(page.locator('.camera-stage__target')).toContainText(/^Цель \d+° (левее|правее) центра$/)
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await preparePhotoArea(page)
+  await page.getByRole('button', { name: 'Включить камеру' }).click()
+  await expect(page.getByRole('alert')).toContainText('Камера недоступна')
+  await expect(page.locator('input[type="file"][accept="image/*"]')).toBeAttached()
   await expect(page.getByRole('button', { name: 'Снимок' })).toBeEnabled()
   expect(errors).toEqual([])
 })
@@ -239,7 +213,8 @@ test('camera tracks stop on view switch, route navigation, and tab hiding', asyn
   const counts = () => page.evaluate(() => (window as Window & { __cameraProbe: { requests: number; stops: number } }).__cameraProbe)
 
   await page.goto('map')
-  await page.getByRole('button', { name: 'Камера' }).click()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await preparePhotoArea(page)
   await page.getByRole('button', { name: 'Включить камеру' }).click()
   await expect(page.getByRole('button', { name: 'Выключить камеру' })).toBeVisible()
   expect(await counts()).toEqual({ requests: 1, stops: 0 })
@@ -254,7 +229,8 @@ test('camera tracks stop on view switch, route navigation, and tab hiding', asyn
 
   await page.getByRole('button', { name: 'Меню и настройки' }).click()
   await page.getByRole('link', { name: /Карта участка/ }).click()
-  await page.getByRole('button', { name: 'Камера' }).click()
+  await expect(page.locator('.field-map__frame')).toHaveAttribute('data-imagery-status', 'ready')
+  await preparePhotoArea(page)
   await page.getByRole('button', { name: 'Включить камеру' }).click()
   await expect(page.getByRole('button', { name: 'Выключить камеру' })).toBeVisible()
   await page.evaluate(() => {
@@ -297,6 +273,7 @@ test('home field views keep the active cast and release camera on every switch',
   expect(Math.abs(frame.width - surface.width)).toBeLessThanOrEqual(1)
   expect(Math.abs(frame.height - surface.height)).toBeLessThanOrEqual(1)
   await page.getByRole('button', { name: 'Точка и настройки' }).click()
+  await page.getByRole('button', { name: 'Ввести координаты вручную' }).click()
   await expect(page.getByRole('textbox', { name: 'Широта' })).toBeVisible()
   await page.locator('.map-footer').getByRole('button', { name: 'К промеру' }).click()
 
@@ -309,7 +286,8 @@ test('home field views keep the active cast and release camera on every switch',
   await reliefSettings.getByRole('radio', { name: '3D схема' }).check()
   await reliefSettings.getByRole('button', { name: 'Закрыть' }).click()
   await expect(page.locator('.map-bottom__summary')).toContainText('3D схема')
-  await page.getByRole('button', { name: 'AR' }).click()
+  await page.getByRole('button', { name: 'Снимок' }).click()
+  await preparePhotoArea(page)
   await page.getByRole('button', { name: 'Включить камеру' }).click()
   await expect(page.getByRole('button', { name: 'Выключить камеру' })).toBeVisible()
   expect(await counts()).toEqual({ requests: 1, stops: 0 })
@@ -318,7 +296,7 @@ test('home field views keep the active cast and release camera on every switch',
   await expect(page.getByRole('button', { name: /Коснулся воды/ })).toBeVisible()
   await expect.poll(async () => (await counts()).stops).toBe(1)
 
-  await page.getByRole('button', { name: 'AR' }).click()
+  await page.getByRole('button', { name: 'Камера' }).click()
   await page.getByRole('button', { name: 'Включить камеру' }).click()
   await expect(page.getByRole('button', { name: 'Выключить камеру' })).toBeVisible()
   await page.getByRole('button', { name: 'Снимок' }).click()

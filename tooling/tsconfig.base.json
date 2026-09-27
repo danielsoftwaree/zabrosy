@@ -7,7 +7,7 @@
     "strict": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client", "node", "vitest/globals", "webxr"],
+    "types": ["vite/client", "node", "vitest/globals"],
     "noEmit": true
   }
 }

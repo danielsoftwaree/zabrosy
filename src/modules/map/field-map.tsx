@@ -4,16 +4,27 @@ import { Target } from '@phosphor-icons/react/dist/csr/Target'
 import { Plus } from '@phosphor-icons/react/dist/csr/Plus'
 import { Minus } from '@phosphor-icons/react/dist/csr/Minus'
 import { SlidersHorizontal } from '@phosphor-icons/react/dist/csr/SlidersHorizontal'
-import { Button } from '../../shared/ui'
+import { Accordion, Button } from '../../shared/ui'
+import { Ruler } from '@phosphor-icons/react/dist/csr/Ruler'
+import { Camera } from '@phosphor-icons/react/dist/csr/Camera'
+import { ArrowUp } from '@phosphor-icons/react/dist/csr/ArrowUp'
+import { ArrowDown } from '@phosphor-icons/react/dist/csr/ArrowDown'
+import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft'
+import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight'
+import { useMapTools } from './map-tools'
+import { validQuad } from './photo-geometry'
 import { useFieldUi } from '../../shared/ui/field-ui'
 import { useFieldStore } from '../../shared/storage'
 import type { Coordinate, FieldData, Session } from '../../shared/model'
 import { newSession } from '../survey'
-import { BottomView } from './bottom'
+import { BottomView, observedDepths } from './bottom'
+import { DepthSources } from './depth-sources'
+import { useEncChart } from './enc-chart-store'
+import { areaAt } from './enc-chart'
 import { CameraView } from './camera'
 import { CanvasMap, type CanvasMapApi, type CanvasMapView, type MapImageStatus } from './canvas-map'
 import { imageryProviders } from './imagery-providers'
-import { CEGIELINKA, bearingDegrees, distanceMeters } from './geometry'
+import { CEGIELINKA, bearingDegrees, distanceMeters, localMeters } from './geometry'
 import { relativeAngle } from '../../shared/platform/sensors'
 import './map.css'
 
@@ -37,6 +48,9 @@ function coordinateNumber(value: string, min: number, max: number) {
 
 export function MapPanel({ view: controlledView, children }: Props) {
   const { data, loading, error, update } = useFieldStore()
+  const tools = useMapTools()
+  const openedEnc = useEncChart(state => state.chart)
+  const enc = tools.dataset === 'enc-current' ? openedEnc : null
   const drawer = useFieldUi(state => state.drawer)
   const setDrawer = useFieldUi(state => state.setDrawer)
   const [internalView, setInternalView] = useState<View>('aerial')
@@ -44,6 +58,7 @@ export function MapPanel({ view: controlledView, children }: Props) {
   const embedded = Boolean(children)
   const mapApi = useRef<CanvasMapApi | null>(null)
   const mapView = useRef<CanvasMapView | null>(null)
+  const [mapCenter, setMapCenter] = useState<Coordinate>(CEGIELINKA)
   const [viewWidthM, setViewWidthM] = useState(280)
   const [providerId, setProviderId] = useState('gugik-high')
   const [candidate, setCandidate] = useState<Coordinate | null>(null)
@@ -58,11 +73,39 @@ export function MapPanel({ view: controlledView, children }: Props) {
   const station = session?.station.position ?? null
   const target = data.draft?.target ?? session?.target ?? null
   const visibleCasts = data.casts.filter((cast) => cast.sessionId === session?.id && cast.target)
-  const targetBearing = station && target ? bearingDegrees(station, target) : null
   const targetDistance = station && target ? distanceMeters(station, target) : null
+  const selectedChart = data.charts.find(chart => chart.id === tools.dataset)
+  const depthPoints = enc ? [] : selectedChart ? selectedChart.points.map(point => ({ position: point.position, meters: point.depthM })) : observedDepths(visibleCasts)
+  const haveDepthLayer = Boolean(enc || depthPoints.length)
+  const candidateArea = enc && candidate ? areaAt(enc, candidate) : null
+  const targetArea = enc && target ? areaAt(enc, target) : null
+
+
+  function showMap() {
+    setDrawer('survey')
+    if (embedded) useFieldUi.getState().setView('aerial')
+    else setInternalView('aerial')
+  }
+  function startTool(mode: 'distance' | 'photo') {
+    const origin = station ?? tools.photoOrigin ?? (tools.mode === 'distance' ? tools.points[0] : null)
+    tools.start(mode === 'photo' && !origin ? 'distance' : mode, origin ?? null)
+    setCandidate(null)
+    showMap()
+  }
+  function showCamera() {
+    tools.finish()
+    setDrawer('survey')
+    if (embedded) useFieldUi.getState().setView('camera')
+    else setInternalView('camera')
+  }
+  const areaValid = tools.points.length === 4 && validQuad(tools.points.map(point => {
+    const local = localMeters(tools.points[0], point)
+    return { x: local.east, y: local.north }
+  }))
 
   function mapTap(point: Coordinate) {
-    if (locked || imageStatus !== 'ready') return
+    if ((imageStatus !== 'ready' && !haveDepthLayer) || (locked && !tools.mode)) return
+    if (tools.mode) { tools.add(point); return }
     setCandidate(point)
     setDrawer('point')
     setLatitude(point.lat.toFixed(7))
@@ -174,41 +217,58 @@ export function MapPanel({ view: controlledView, children }: Props) {
     <div className="map-panel__surface">
       {activeView === 'aerial' && <>
         <div className="field-map__frame" data-imagery-status={imageStatus} aria-busy={imageStatus === 'loading'}>
-          <CanvasMap apiRef={mapApi} viewRef={mapView} provider={provider} station={station} referenceBearingDeg={session?.station.referenceBearingDeg ?? null} target={target} casts={visibleCasts} candidate={candidate} locked={locked || imageStatus !== 'ready'} onPick={mapTap} onStatus={setImageStatus} onWidth={setViewWidthM} />
-          {imageStatus !== 'ready' && <div className="field-map__fallback">{imageStatus === 'error' ? 'Снимок недоступен. Повторите загрузку или введите координаты вручную.' : 'Загружаем снимок…'}</div>}
+          <CanvasMap apiRef={mapApi} viewRef={mapView} provider={provider} station={station} referenceBearingDeg={session?.station.referenceBearingDeg ?? null} target={target} casts={visibleCasts} candidate={candidate} toolPoints={tools.mode ? tools.points : tools.anchors} toolMode={tools.mode} encChart={enc} depthPoints={depthPoints} locked={(locked && !tools.mode) || (imageStatus !== 'ready' && !haveDepthLayer)} onPick={mapTap} onStatus={setImageStatus} onWidth={setViewWidthM} onCenter={setMapCenter} />
+          {imageStatus !== 'ready' && !haveDepthLayer && <div className="field-map__fallback">{imageStatus === 'error' ? 'Снимок недоступен. Повторите загрузку или введите координаты вручную.' : 'Загружаем снимок…'}</div>}
         </div>
         <div className="map-panel__top-shade" aria-hidden="true" />
         <div className="map-panel__info"><strong>{provider.id === 'gugik-high' ? 'Geoportal · снимок' : provider.label}</strong>
-          <p>{imageStatus === 'error' ? 'Снимок недоступен · координаты вручную' : 'Выберите точку на снимке · дно здесь не показано'}</p>
-          {imageStatus === 'error' && <button type="button" className="map-panel__retry" onClick={() => mapApi.current?.retry()}>Повторить загрузку</button>}
+          <p>{imageStatus === 'error' ? 'Снимок недоступен · координаты вручную' : tools.mode === 'distance' ? 'Отметьте своё место и второй берег' : tools.mode === 'photo' ? 'Отметьте четыре точки кромки воды по порядку' : 'Коснитесь снимка, чтобы выбрать цель'}</p>
+          {imageStatus === 'error' && <Button type="button" tone="quiet" className="map-panel__retry" onClick={() => mapApi.current?.retry()}>Повторить загрузку</Button>}
+          {enc && <p>{enc.name} · диапазоны глубин от нуля карты</p>}
+          {selectedChart && <p>{selectedChart.name} · {selectedChart.verticalDatum}</p>}
+          {targetArea && <p>У цели: {targetArea.shallowM ?? '?'}–{targetArea.deepM ?? '?'} м по карте</p>}
           {target && <p className="map-panel__target">Цель {target.lat.toFixed(6)}, {target.lon.toFixed(6)}{targetDistance !== null ? ` · ≈${Math.round(targetDistance)} м от станции` : ''}</p>}
         </div>
         <div className="map-panel__rail" role="group" aria-label="Управление снимком">
-          <button type="button" onClick={locate} disabled={embedded && locked} aria-label="Моя позиция" title="Моя позиция"><Gps size={21} /></button>
-          <button type="button" onClick={() => mapApi.current?.centerAt(station ?? CEGIELINKA)} aria-label="К станции" title="К станции"><Target size={21} /></button>
-          <div className="map-panel__zoom"><button type="button" onClick={() => mapApi.current?.zoom(.5)} aria-label="Приблизить"><Plus size={20} /></button>
-            <button type="button" onClick={() => mapApi.current?.zoom(2)} aria-label="Отдалить"><Minus size={20} /></button></div>
-          <button type="button" onClick={() => { setCandidate(null); setActionError(''); setDrawer('coordinates') }} disabled={embedded && locked} aria-label="Точка и настройки" title="Точка и настройки"><SlidersHorizontal size={21} /></button>
+          <Button type="button" tone="quiet" onClick={locate} disabled={embedded && locked} aria-label="Моя позиция" title="Моя позиция"><Gps size={21} /></Button>
+          <Button type="button" tone="quiet" onClick={() => mapApi.current?.centerAt(station ?? CEGIELINKA)} aria-label="К станции" title="К станции"><Target size={21} /></Button>
+          <Button type="button" tone="quiet" onClick={() => startTool('distance')} aria-pressed={tools.mode === 'distance'} aria-label="Измерить между точками" title="Измерить между точками"><Ruler size={21} /></Button>
+          <Button type="button" tone="quiet" onClick={() => startTool('photo')} aria-pressed={tools.mode === 'photo'} aria-label="Участок для фото" title="Участок для фото"><Camera size={21} /></Button>
+          <div className="map-panel__zoom"><Button type="button" tone="quiet" onClick={() => mapApi.current?.zoom(.5)} aria-label="Приблизить"><Plus size={20} /></Button>
+            <Button type="button" tone="quiet" onClick={() => mapApi.current?.zoom(2)} aria-label="Отдалить"><Minus size={20} /></Button></div>
+          <Button type="button" tone="quiet" onClick={() => { setCandidate(null); setActionError(''); setDrawer('coordinates') }} disabled={embedded && locked} aria-label="Точка и настройки" title="Точка и настройки"><SlidersHorizontal size={21} /></Button>
         </div>
-        <p className="field-map__source">{provider.attribution}</p>
+        <div className="map-panel__depth-source"><DepthSources /></div>
+        <p className="field-map__source">{provider.attribution}{enc ? ` · ${enc.name}, локальный ENC` : ''}</p>
       </>}
-      {activeView === 'camera' && <CameraView active targetBearing={targetBearing} referenceBearing={session?.station.referenceBearingDeg ?? null} targetDistance={targetDistance}
-        onChooseMap={() => { setDrawer('survey'); if (embedded) useFieldUi.getState().setView('aerial'); else setInternalView('aerial') }} />}
-      {activeView === 'bottom' && <BottomView station={station} casts={visibleCasts} charts={data.charts} />}
+      {activeView === 'camera' && <CameraView key={JSON.stringify(tools.anchors)} active station={tools.photoOrigin ?? station} anchors={tools.anchors}
+        onChooseMap={() => startTool('distance')} onPrepareArea={() => startTool('photo')}
+        onTarget={point => { showMap(); setCandidate(point); setDrawer('point') }} />}
+      {activeView === 'bottom' && <BottomView viewCenter={mapCenter} station={station} target={candidate ?? target} casts={visibleCasts} charts={data.charts} />}
       {loading && <p className="map-panel__status" role="status">Загружаем локальные данные…</p>}
       {error && <p className="map-panel__status map-error" role="alert">{error}</p>}
     </div>
   </section>
 
-  const footer = activeView !== 'aerial' || drawer === 'survey' ? null : <section className="map-footer" aria-label={drawer === 'point' ? 'Выбранная точка' : 'Координаты и навигация'}>
+  const footer = activeView !== 'aerial' || (!tools.mode && drawer === 'survey') ? null : tools.mode ? <section className="map-footer map-footer--measure" aria-label="Измерение на карте">
+    <div className="map-footer__head"><strong>{tools.mode === 'distance' ? 'Между двумя точками' : `Участок для фото · ${Math.min(4, tools.points.length + 1)} / 4`}</strong><Button tone="quiet" onClick={tools.clear}>Закрыть</Button></div>
+    <p className="map-hint">{tools.mode === 'distance' ? tools.points.length === 0 ? 'Коснитесь своего места на берегу — это начало замера.' : tools.points.length === 1 ? 'Теперь отметьте второй берег или любую цель на воде.' : 'Расстояние по карте между точками А и Б.' : ['Ближняя кромка воды: точка слева.', 'Ближняя кромка воды: точка справа.', 'Дальняя кромка воды: точка справа.', 'Дальняя кромка воды: точка слева.'][tools.points.length] ?? 'Выберите эти же четыре точки на фото. Все точки должны лежать на уровне воды.'}</p>
+    {tools.mode === 'distance' && tools.points.length === 2 && <strong className="map-footer__distance">≈ {Math.round(distanceMeters(tools.points[0], tools.points[1]))} м</strong>}
+    <div className="map-footer__actions"><Button tone="quiet" onClick={tools.undo} disabled={!tools.points.length}>{tools.mode === 'distance' && tools.points.length === 2 ? 'Убрать второй берег' : 'Отменить точку'}</Button>
+      {tools.mode === 'distance' && tools.points.length === 2 && <Button onClick={() => { const origin = tools.points[0]; tools.start('photo', origin) }}>Привязать фото</Button>}
+      {tools.mode === 'photo' && tools.points.length === 4 && <Button disabled={!areaValid} onClick={showCamera}>Перейти к фото</Button>}</div>
+    {tools.mode === 'photo' && tools.points.length === 4 && !areaValid && <p className="map-error">Участок пересекается или слишком узкий. Отмените последнюю точку и выберите шире.</p>}
+  </section> : <section className="map-footer" aria-label={drawer === 'point' ? 'Выбранная точка' : 'Координаты и навигация'}>
     <div className="map-footer__handle" aria-hidden="true" />
     <div className="map-footer__head">
       <strong>{drawer === 'point' && candidate ? 'Выбрана точка' : 'Точка и настройки'}</strong>
-      <button type="button" className="map-footer__back" onClick={() => { setActionError(''); setDrawer('survey') }}>К промеру</button>
+      <Button type="button" tone="quiet" className="map-footer__back" onClick={() => { setActionError(''); setDrawer('survey') }}>К промеру</Button>
     </div>
     {drawer === 'point' && candidate ? <>
       <p className="map-footer__position">{candidate.lat.toFixed(6)}, {candidate.lon.toFixed(6)}</p>
       {station && <p className="map-footer__distance">От станции ≈ {Math.round(distanceMeters(station, candidate))} м по карте · {Math.round(bearingDegrees(station, candidate))}°</p>}
+      {candidateArea && <p className="map-hint">Область по ENC: {candidateArea.shallowM ?? '?'}–{candidateArea.deepM ?? '?'} м. Отсчёт карты: {enc?.verticalDatum}. Это не сегодняшняя глубина в точке.</p>}
+      <Button tone="quiet" onClick={() => { if (embedded) useFieldUi.getState().setView('bottom'); else setInternalView('bottom') }}>Посмотреть дно здесь</Button>
       {session ? <div className="map-footer__actions">
         <Button onClick={saveTarget} disabled={!session || locked}>Сохранить цель</Button>
         <Button tone="quiet" onClick={() => setStation(candidate)} disabled={!session || Boolean(data.draft)}>Это станция</Button>
@@ -216,22 +276,29 @@ export function MapPanel({ view: controlledView, children }: Props) {
       </div> : <Button className="map-footer__create" type="button" onClick={createSession}>Создать сессию</Button>}
       {locked && <p className="map-hint">Во время промера цель и привязку менять нельзя.</p>}
     </> : <>
-      <form className="field-map__coordinates" onSubmit={chooseCoordinates}>
+      <Accordion title="Ввести координаты вручную" defaultOpen={imageStatus === 'error'}><form className="field-map__coordinates" onSubmit={chooseCoordinates}>
         <strong>Координаты WGS84</strong>
         <div><label>Широта<input type="text" inputMode="decimal" value={latitude} onChange={event => setLatitude(event.target.value)} autoComplete="off" spellCheck={false} /></label>
           <label>Долгота<input type="text" inputMode="decimal" value={longitude} onChange={event => setLongitude(event.target.value)} autoComplete="off" spellCheck={false} /></label></div>
         <Button type="submit" tone="quiet">Выбрать точку</Button>
-      </form>
+      </form></Accordion>
       <fieldset className="field-map__providers">
         <legend>Источник снимка</legend>
         {imageryProviders.map(item => <label key={item.id}><input type="radio" name="imagery-provider" value={item.id} checked={providerId === item.id}
           onChange={() => { setImageStatus('loading'); setProviderId(item.id) }} /><span>{item.label}</span></label>)}
       </fieldset>
+      <Accordion title="Слой глубин">
+        <fieldset className="field-map__providers"><legend>На снимке и в 3D</legend>
+          <label><input type="radio" name="map-depth-source" checked={tools.dataset === 'own'} onChange={() => tools.selectDataset('own')} /><span>Мои промеры</span></label>
+          {data.charts.map(chart => <label key={chart.id}><input type="radio" name="map-depth-source" checked={tools.dataset === chart.id} onChange={() => tools.selectDataset(chart.id)} /><span>{chart.name}</span></label>)}
+          {openedEnc && <label><input type="radio" name="map-depth-source" checked={tools.dataset === 'enc-current'} onChange={() => tools.selectDataset('enc-current')} /><span>{openedEnc.name} · ENC</span></label>}
+        </fieldset>
+      </Accordion>
       <div className="field-map__navigation" role="group" aria-label="Навигация по снимку">
-        <button type="button" onClick={() => mapApi.current?.pan(0, .15)} aria-label="На север">↑</button>
-        <button type="button" onClick={() => mapApi.current?.pan(-.15, 0)} aria-label="На запад">←</button>
-        <button type="button" onClick={() => mapApi.current?.pan(.15, 0)} aria-label="На восток">→</button>
-        <button type="button" onClick={() => mapApi.current?.pan(0, -.15)} aria-label="На юг">↓</button>
+        <Button type="button" tone="quiet" onClick={() => mapApi.current?.pan(0, .15)} aria-label="На север"><ArrowUp size={20} /></Button>
+        <Button type="button" tone="quiet" onClick={() => mapApi.current?.pan(-.15, 0)} aria-label="На запад"><ArrowLeft size={20} /></Button>
+        <Button type="button" tone="quiet" onClick={() => mapApi.current?.pan(.15, 0)} aria-label="На восток"><ArrowRight size={20} /></Button>
+        <Button type="button" tone="quiet" onClick={() => mapApi.current?.pan(0, -.15)} aria-label="На юг"><ArrowDown size={20} /></Button>
       </div>
       <p className="map-hint">Видимый участок ≈ {Math.round(viewWidthM)} м по ширине · шаг стрелки ≈ {Math.round(viewWidthM * .15)} м. Дата снимка неизвестна.</p>
       {positionStatus && <p className="map-hint" role="status">{positionStatus}</p>}
@@ -239,5 +306,5 @@ export function MapPanel({ view: controlledView, children }: Props) {
     {actionError && <p className="map-error" role="alert">{actionError}</p>}
   </section>
 
-  return children ? children(surface, footer) : <>{surface}{footer}</>
+  return children ? children(surface, footer) : <div className="map-panel-layout">{surface}{footer}</div>
 }

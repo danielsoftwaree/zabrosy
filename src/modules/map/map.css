@@ -56,10 +56,12 @@
 
 /* Field surface follows the original marker layout: imagery first, controls over it. */
 .map-panel { position: relative; width: 100%; color: var(--ink); background: #e7eeeb; isolation: isolate; }
+.map-panel-layout { display: flex; flex-direction: column; height: calc(100dvh - 70px - env(safe-area-inset-top)); min-height: 320px; }
 .map-panel--embedded { height: 100%; min-height: 0; overflow: hidden; }
-.map-panel--standalone { min-height: calc(100dvh - 140px); }
+.map-panel--standalone { flex: 1; min-height: 0; }
 .map-panel__surface { position: relative; height: calc(100dvh - 140px); min-height: 430px; overflow: hidden; background: #e7eeeb; }
 .map-panel--embedded .map-panel__surface { height: 100%; min-height: 0; }
+.map-panel--standalone .map-panel__surface { height: 100%; min-height: 0; }
 .map-panel__heading { position: absolute; top: 10px; left: 15px; right: 15px; z-index: 5; }
 .map-panel__heading h1 { margin: 0 0 8px; font-size: 23px; }
 .map-panel__heading .map-view-switch { margin: 0; border: 1px solid #d4dfd6; border-radius: 18px; background: #ffffffe0; box-shadow: 0 4px 18px #264d3810; }
@@ -75,7 +77,8 @@
 .map-panel__info .map-panel__target { border: 0; font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .map-panel__rail { position: absolute; z-index: 4; top: 132px; right: 15px; display: grid; gap: 8px; }
 .map-panel--embedded .map-panel__rail { top: 84px; }
-.map-panel__rail > button, .map-panel__zoom button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #d2ddd4; border-radius: 50%; background: #fffffff0; color: #18594a; box-shadow: 0 3px 13px #103b2910; cursor: pointer; }
+.map-panel__rail > button, .map-panel__zoom button { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 1px solid #d2ddd4; border-radius: 50%; background: #fffffff0; color: #18594a; box-shadow: 0 3px 13px #103b2910; cursor: pointer; }
+.map-panel__rail > button[aria-pressed="true"] { background: var(--green); color: white; border-color: var(--green); }
 .map-panel__rail button:active { transform: scale(.96); }
 .map-panel__rail button:disabled { opacity: .48; cursor: not-allowed; }
 .map-panel--embedded.map-panel--selecting .map-panel__rail > button { display: none; }
@@ -85,7 +88,12 @@
 .map-panel .field-map__source { position: absolute; z-index: 3; right: 12px; bottom: 63px; margin: 0; padding: 3px 5px; border-radius: 4px; background: #ffffffe8; color: #466657; font-size: 10px; }
 .map-panel__status { position: absolute; z-index: 5; top: 8px; left: 15px; right: 15px; margin: 0; padding: 9px 12px; border-radius: 9px; background: #fffffff0; font-size: 12px; }
 .map-panel--embedded .map-panel__status { top: 84px; }
-.map-footer { position: relative; z-index: 6; flex: none; width: 100%; max-height: min(72dvh, calc(100dvh - 80px), 520px); overflow-y: auto; overscroll-behavior: contain; padding: 18px 18px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: #fbfcf8; box-shadow: 0 -10px 35px #1d46391c; color: var(--ink); }
+.map-footer { position: relative; z-index: 6; flex: none; width: 100%; max-height: min(56dvh, calc(100dvh - 80px), 420px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 18px 18px calc(16px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: #fbfcf8; box-shadow: 0 -10px 35px #1d46391c; color: var(--ink); }
+.map-footer--measure { max-height: min(44dvh, 270px); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+.map-footer--measure .map-footer__head { min-height: 38px; }
+.map-footer--measure .map-footer__head .button { min-height: 38px; padding: 7px 10px; font-size: 12px; }
+.map-footer--measure .map-footer__actions { margin-top: 8px; }
+.map-footer--measure .map-hint { margin: 5px 0; }
 .map-footer__handle { position: absolute; top: 7px; left: calc(50% - 17px); width: 34px; height: 3px; border-radius: 4px; background: #d6e1d8; }
 .map-footer__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
 .map-footer__head strong { font-size: 15px; }
@@ -106,3 +114,31 @@
 @media (max-height: 650px) {
   .map-panel--embedded .map-panel__info, .map-panel--embedded .map-panel__rail { top: 84px; }
 }
+@media (max-width: 380px) {
+  .map-panel__rail { grid-template-columns: repeat(2, 44px); gap: 7px; right: 10px; }
+  .map-panel__rail .map-panel__zoom { grid-row: span 2; }
+  .map-panel__info { max-width: calc(100% - 128px); }
+  .map-panel--embedded.map-panel--selecting .map-panel__rail { grid-template-columns: 44px; }
+  .map-footer__actions .button { font-size: 12px; }
+}
+.map-panel__depth-source { position: absolute; z-index: 4; left: 14px; bottom: 66px; }
+.map-panel__depth-source .map-bottom__settings { background: #fbfcf8ef; }
+.map-footer--measure .map-footer__actions .button:first-child { grid-column: auto; }
+.map-footer--measure > .map-footer__distance { display: block; margin-top: 8px; font-size: 24px; color: var(--ink); }
+@media (max-height: 620px) {
+  .map-footer--measure { max-height: 40dvh; }
+  .map-panel__rail { top: 84px; right: 10px; grid-template-columns: repeat(4, 44px); gap: 6px; }
+  .map-panel--standalone .map-panel__rail { top: 90px; }
+  .map-panel__zoom { display: contents; }
+  .map-panel__zoom button { border: 1px solid #d2ddd4; border-radius: 50%; box-shadow: 0 3px 13px #103b2910; }
+  .map-panel__zoom button + button { border: 1px solid #d2ddd4; }
+  .map-panel__info { display: none; }
+  .map-panel--selecting .map-panel__rail, .map-panel--selecting .map-panel__depth-source { display: none; }
+}
+/* Keep navigation outside the scrolling photo/depth pane. */
+.map-panel--standalone:has(.map-camera), .map-panel--standalone:has(.map-bottom) { display: flex; flex-direction: column; }
+.map-panel--standalone:has(.map-camera) .map-panel__heading, .map-panel--standalone:has(.map-bottom) .map-panel__heading { position: relative; flex: none; inset: auto; padding: 10px 15px; background: var(--surface); }
+.map-panel--standalone:has(.map-camera) .map-panel__surface, .map-panel--standalone:has(.map-bottom) .map-panel__surface { flex: 1; height: auto; min-height: 0; }
+.map-panel--standalone .map-panel__surface > .map-camera, .map-panel--standalone .map-panel__surface > .map-bottom { padding: 12px 12px 18px; }
+.map-panel--embedded .map-panel__surface:has(> .map-camera), .map-panel--embedded .map-panel__surface:has(> .map-bottom) { padding-top: 84px; }
+.map-panel--embedded .map-panel__surface > .map-camera, .map-panel--embedded .map-panel__surface > .map-bottom { padding-top: 12px; }

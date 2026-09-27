@@ -1,180 +1,221 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useRef, useState, type ChangeEvent, type PointerEvent } from 'react'
 import { Camera } from '@phosphor-icons/react/dist/csr/Camera'
-import { Crosshair } from '@phosphor-icons/react/dist/csr/Crosshair'
-import { SlidersHorizontal } from '@phosphor-icons/react/dist/csr/SlidersHorizontal'
-import { Button, Sheet } from '../../shared/ui'
-import { requestSensorPermissions, relativeAngle, cameraPlaneHeading } from '../../shared/platform/sensors'
-import { useDeviceReadings } from '../../shared/platform/use-device-readings'
-import { useXrRange } from './use-xr-range'
-import type { XrRangeCapture } from './xr-range'
+import { Button } from '../../shared/ui'
+import type { Coordinate } from '../../shared/model'
+import { distanceMeters, localMeters } from './geometry'
+import { photoProjection, type PhotoPoint } from './photo-geometry'
+import { useMapTools } from './map-tools'
 import './camera.css'
 
-type Props = { targetBearing: number | null; referenceBearing: number | null; targetDistance?: number | null; active: boolean; onChooseMap?: () => void }
-const LAST_RANGE_KEY = 'marker:last-xr-range'
-type StoredRange = { version: 1; capture: XrRangeCapture }
-
-function readLastRange(): XrRangeCapture | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const value: unknown = JSON.parse(window.sessionStorage.getItem(LAST_RANGE_KEY) ?? 'null')
-    if (!value || typeof value !== 'object' || !('version' in value) || value.version !== 1 || !('capture' in value)) return null
-    const capture = value.capture
-    if (!capture || typeof capture !== 'object' || !('distanceM' in capture) || !('measuredAt' in capture) || !('source' in capture)) return null
-    if (typeof capture.distanceM !== 'number' || !Number.isFinite(capture.distanceM) || capture.distanceM <= 0 ||
-      typeof capture.measuredAt !== 'number' || !Number.isFinite(capture.measuredAt) || capture.measuredAt <= 0 || capture.measuredAt > Date.now() + 60_000 ||
-      (capture.source !== 'surface' && capture.source !== 'water-plane')) return null
-    if (capture.source === 'water-plane' && (!('waterLevelY' in capture) || !('heightM' in capture) || capture.waterLevelY === undefined || capture.heightM === undefined)) return null
-    if ('waterLevelY' in capture && capture.waterLevelY !== undefined && (typeof capture.waterLevelY !== 'number' || !Number.isFinite(capture.waterLevelY))) return null
-    if ('heightM' in capture && capture.heightM !== undefined && (typeof capture.heightM !== 'number' || !Number.isFinite(capture.heightM) || capture.heightM < 0.2)) return null
-    return capture as XrRangeCapture
-  } catch { return null }
+type Props = {
+  active: boolean
+  station: Coordinate | null
+  anchors: Coordinate[]
+  onChooseMap(): void
+  onPrepareArea(): void
+  onTarget(point: Coordinate): void
 }
 
-const metres = (value: number) => `${value < 10 ? Number(value.toFixed(1)).toLocaleString('ru-RU') : Math.round(value)} м`
-const origin = (source: XrRangeCapture['source']) => source === 'water-plane' ? 'по уровню воды, уточнённому у берега' : 'до распознанной поверхности'
+function AnchorGuide({ anchors, station, current }: { anchors: Coordinate[]; station: Coordinate; current: number }) {
+  const local = anchors.map(p => localMeters(station, p))
+  const center = local.reduce((sum, p) => ({ east: sum.east + p.east / 4, north: sum.north + p.north / 4 }), { east: 0, north: 0 })
+  const angle = Math.atan2(center.east, center.north)
+  const rotated = local.map(p => ({ x: p.east * Math.cos(angle) - p.north * Math.sin(angle), y: -(p.east * Math.sin(angle) + p.north * Math.cos(angle)) }))
+  const extent = Math.max(1, ...rotated.map(p => Math.max(Math.abs(p.x), Math.abs(p.y))))
+  const points = rotated.map(p => ({ x: 100 + p.x / extent * 70, y: 100 + p.y / extent * 75 }))
+  return <svg className="photo-anchor-guide" viewBox="0 0 200 120" role="img" aria-label="Схема четырёх точек. Ваше место снизу, дальний берег сверху">
+    <polygon points={points.map(p => `${p.x},${p.y}`).join(' ')} fill="#edf3e7" stroke="#18594a" strokeWidth="1.5" />
+    {points.map((p, i) => <g key={i}><circle cx={p.x} cy={p.y} r="10" fill={i === current ? '#d8f285' : '#fbfcf8'} stroke="#18594a" /><text x={p.x} y={p.y + 4} textAnchor="middle" fontSize="12" fill="#18594a">{i + 1}</text></g>)}
+    <circle cx="100" cy="108" r="3" fill="#18594a" /><text x="109" y="112" fontSize="10" fill="#18594a">Вы</text>
+  </svg>
+}
 
-export function CameraView({ targetBearing, referenceBearing, targetDistance = null, active, onChooseMap }: Props) {
-  const xr = useXrRange(active)
-  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null)
-  const overlayRoot = useRef<HTMLDivElement>(null)
+export function CameraView({ active, station, anchors, onChooseMap, onPrepareArea, onTarget }: Props) {
   const video = useRef<HTMLVideoElement>(null)
+  const canvas = useRef<HTMLCanvasElement>(null)
   const stream = useRef<MediaStream | null>(null)
-  const requestId = useRef(0)
-  const live = useRef(false)
-  const [camera, setCamera] = useState<'off' | 'requesting' | 'on' | 'denied'>('off')
-  const [sensor, setSensor] = useState<'off' | 'on' | 'denied'>('off')
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [manualBearing, setManualBearing] = useState(0)
-  const [alphaZero, setAlphaZero] = useState<number | null>(null)
-  const [lastRange, setLastRange] = useState(readLastRange)
-  const [savedInSession, setSavedInSession] = useState<XrRangeCapture | null>(null)
-  const reading = useDeviceReadings(active && sensor === 'on', false).orientation?.value ?? null
+  const request = useRef(0)
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const gestureBlocked = useRef(false)
+  const [camera, setCamera] = useState<'off' | 'requesting' | 'on'>('off')
+  const [zoomed, setZoomed] = useState(false)
+  const photo = useMapTools(state => state.photo)
+  const points = useMapTools(state => state.photoPoints)
+  const pick = useMapTools(state => state.photoPick)
+  const setPhoto = useMapTools(state => state.setPhoto)
+  const setPoints = useMapTools(state => state.setPhotoPoints)
+  const setPick = useMapTools(state => state.setPhotoPick)
+  const [issue, setIssue] = useState('')
+  const [cursor, setCursor] = useState<PhotoPoint>({ x: .5, y: .5 })
+  const project = points.length === 4 ? photoProjection(points, anchors) : null
+  const target = pick && project ? project(pick) : null
+  const distance = target && station ? distanceMeters(station, target) : null
+  const ready = anchors.length === 4 && station !== null
 
-  useEffect(() => {
-    const hostTimer = window.setTimeout(() => setOverlayHost(document.body), 0)
-    live.current = true
-    const release = () => {
-      requestId.current++
-      stream.current?.getTracks().forEach(track => track.stop())
-      stream.current = null
-      if (video.current) video.current.srcObject = null
-      setCamera('off')
-    }
-    const onVisibility = () => { if (document.hidden) release() }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => { window.clearTimeout(hostTimer); live.current = false; document.removeEventListener('visibilitychange', onVisibility); release() }
-  }, [])
-
-  function stopPreview() {
-    requestId.current++
+  function stopCamera() {
+    request.current++
     stream.current?.getTracks().forEach(track => track.stop())
     stream.current = null
     if (video.current) video.current.srcObject = null
     setCamera('off')
   }
+  useEffect(() => {
+    const release = () => {
+      request.current++
+      stream.current?.getTracks().forEach(track => track.stop())
+      stream.current = null
+      if (video.current) video.current.srcObject = null
+    }
+    const hide = () => { if (document.hidden) { release(); setCamera('off') } }
+    document.addEventListener('visibilitychange', hide)
+    return () => { release(); document.removeEventListener('visibilitychange', hide) }
+  }, [])
+  useEffect(() => {
+    if (!active) {
+      request.current++
+      stream.current?.getTracks().forEach(track => track.stop())
+      stream.current = null
+    }
+  }, [active])
 
-  async function startPreview() {
-    const id = ++requestId.current
-    setCamera('requesting')
+  useEffect(() => {
+    const element = canvas.current
+    const context = element?.getContext('2d')
+    if (!element || !context || !photo) return
+    let cancelled = false
+    const image = new Image()
+    image.onload = () => {
+      if (cancelled) return
+      context.drawImage(image, 0, 0, photo.width, photo.height)
+      const radius = Math.min(photo.width, photo.height) * .024
+      if (points.length) {
+        context.beginPath()
+        points.forEach((p, index) => { if (index) context.lineTo(p.x * photo.width, p.y * photo.height); else context.moveTo(p.x * photo.width, p.y * photo.height) })
+        if (points.length === 4) { context.closePath(); context.fillStyle = '#d8f28522'; context.fill() }
+        context.strokeStyle = '#d8f285'; context.lineWidth = radius / 7; context.stroke()
+      }
+      points.forEach((p, index) => {
+        context.beginPath(); context.arc(p.x * photo.width, p.y * photo.height, radius, 0, Math.PI * 2)
+        context.fillStyle = '#fbfcf8'; context.fill(); context.strokeStyle = '#18594a'; context.lineWidth = radius / 8; context.stroke()
+        context.fillStyle = '#18594a'; context.font = `700 ${radius * 1.25}px system-ui`; context.textAlign = 'center'; context.textBaseline = 'middle'
+        context.fillText(String(index + 1), p.x * photo.width, p.y * photo.height)
+      })
+      if (pick) {
+        context.beginPath(); context.arc(pick.x * photo.width, pick.y * photo.height, radius * .7, 0, Math.PI * 2)
+        context.fillStyle = '#d8f285'; context.fill(); context.strokeStyle = '#18594a'; context.lineWidth = radius / 6; context.stroke()
+      }
+    }
+    image.src = photo.url
+    return () => { cancelled = true }
+  }, [photo, points, pick])
+
+  async function startCamera() {
+    stopCamera()
+    const id = request.current
+    setIssue(''); setPhoto(null); setZoomed(false); setCamera('requesting')
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('unavailable')
-      const next = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { exact: 'environment' } } })
-      if (!live.current || id !== requestId.current || !active || document.hidden) { next.getTracks().forEach(track => track.stop()); return }
-      const facing = next.getVideoTracks()[0]?.getSettings?.().facingMode
-      if (facing && facing !== 'environment') { next.getTracks().forEach(track => track.stop()); throw new Error('rear camera required') }
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('camera unavailable')
+      const next = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 } } })
+      if (id !== request.current || !active || document.hidden) { next.getTracks().forEach(track => track.stop()); return }
       stream.current = next
-      next.getVideoTracks()[0]?.addEventListener('ended', stopPreview, { once: true })
+      next.getVideoTracks()[0]?.addEventListener('ended', stopCamera, { once: true })
       if (video.current) { video.current.srcObject = next; await video.current.play() }
-      if (live.current && id === requestId.current) setCamera('on')
-    } catch { if (live.current && id === requestId.current) { stopPreview(); setCamera('denied') } }
+      if (id === request.current) setCamera('on')
+    } catch {
+      if (id !== request.current) return
+      stopCamera(); setIssue('Камера недоступна. Разрешите доступ или нажмите «Сделать / открыть фото».')
+    }
+  }
+  function freeze() {
+    const element = video.current
+    if (!element?.videoWidth || !element.videoHeight) { setIssue('Дождитесь изображения камеры.'); return }
+    const output = document.createElement('canvas')
+    output.width = element.videoWidth; output.height = element.videoHeight
+    const context = output.getContext('2d')
+    if (!context) { setIssue('Не удалось сохранить кадр. Попробуйте открыть фото.'); return }
+    context.drawImage(element, 0, 0)
+    setPhoto({ url: output.toDataURL('image/jpeg', .92), width: output.width, height: output.height })
+    setZoomed(false); setIssue(''); stopCamera()
+  }
+  async function openPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    stopCamera()
+    const id = request.current
+    setIssue('')
+    if (file.size > 25 * 1024 * 1024) { setIssue('Выберите фото до 25 МБ.'); return }
+    const url = URL.createObjectURL(file)
+    try {
+      const image = new Image(); image.src = url; await image.decode()
+      if (id !== request.current) return
+      const output = document.createElement('canvas')
+      const scale = Math.min(1, 2000 / Math.max(image.naturalWidth, image.naturalHeight))
+      output.width = Math.round(image.naturalWidth * scale); output.height = Math.round(image.naturalHeight * scale)
+      const context = output.getContext('2d')
+      if (!context || !output.width || !output.height) throw new Error('image')
+      context.drawImage(image, 0, 0, output.width, output.height)
+      setPhoto({ url: output.toDataURL('image/jpeg', .92), width: output.width, height: output.height })
+      setZoomed(false)
+    } catch { if (id === request.current) setIssue('Это фото не удалось открыть. Попробуйте JPEG или PNG.') }
+    finally { URL.revokeObjectURL(url) }
+  }
+  function select(point: PhotoPoint) {
+    setIssue('')
+    if (points.length < 4) setPoints([...points, point])
+    else if (project?.(point)) setPick(point)
+    else { setPick(null); setIssue('Выберите воду внутри четырёх отмеченных точек.') }
+  }
+  function tap(event: PointerEvent<HTMLCanvasElement>) {
+    const box = event.currentTarget.getBoundingClientRect()
+    select({ x: Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)), y: Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)) })
+  }
+  function pointerDown(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pointers.current.size > 1) gestureBlocked.current = true
+  }
+  function pointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    const start = pointers.current.get(event.pointerId)
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) gestureBlocked.current = true
+  }
+  function pointerEnd(event: PointerEvent<HTMLCanvasElement>, cancelled = false) {
+    const tracked = pointers.current.has(event.pointerId)
+    if (!tracked) return
+    pointerMove(event)
+    pointers.current.delete(event.pointerId)
+    if (!cancelled && !gestureBlocked.current) tap(event)
+    if (!pointers.current.size) gestureBlocked.current = false
   }
 
-  async function startSensor() {
-    const permission = await requestSensorPermissions()
-    if (!live.current) return
-    setSensor(permission.orientation === 'granted' ? 'on' : 'denied')
-    if (permission.orientation === 'granted') setSettingsOpen(false)
-  }
-
-  function saveRange() {
-    const capture = xr.capture()
-    if (!capture) return
-    setLastRange(capture)
-    setSavedInSession(capture)
-    try { window.sessionStorage.setItem(LAST_RANGE_KEY, JSON.stringify({ version: 1, capture } satisfies StoredRange)) } catch { /* The visible result remains available. */ }
-  }
-
-  const planeHeading = reading ? cameraPlaneHeading(reading.alpha, reading.beta, reading.gamma) : null
-  const relativeTurn = alphaZero !== null && planeHeading !== null ? relativeAngle(planeHeading, alphaZero) : null
-  const turn = sensor === 'on' ? relativeTurn : manualBearing
-  const targetOffset = targetBearing !== null && referenceBearing !== null && turn !== null
-    ? relativeAngle(targetBearing, referenceBearing + turn) : null
-  const targetLabel = targetOffset !== null ? `Цель ${Math.round(Math.abs(targetOffset))}° ${targetOffset < 0 ? 'левее' : 'правее'} центра` : null
-  const xrOpen = xr.phase !== 'off'
-
-  return <div className="map-camera">
-    <div className={`camera-stage camera-stage--${camera}`}>
-      <div className="camera-stage__viewfinder">
-        <video ref={video} autoPlay muted playsInline aria-label="Изображение с камеры для наведения" />
-        <div className="camera-stage__top">
-          <div className="camera-stage__readouts">
-            {targetLabel && <span className="camera-stage__target">{targetLabel}</span>}
-            {targetDistance !== null && Number.isFinite(targetDistance) && <span className="camera-stage__map-distance">До выбранной цели по карте · {metres(targetDistance)}</span>}
-          </div>
-          <button type="button" className="camera-stage__tool" aria-label="Настройки наведения" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={21} aria-hidden="true" /></button>
-        </div>
-        {camera === 'on' && <svg className="camera-stage__cross" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8v32M8 24h32" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>}
-        {(camera === 'off' || camera === 'denied') && <div className="camera-stage__prompt"><Camera size={34} aria-hidden="true" />
-          <p>{camera === 'denied' ? 'Камера недоступна. Проверьте разрешение и повторите.' : xr.support === 'unsupported' ? 'Расстояние можно определить по снимку.' : 'Наведите камеру на точку, до которой хотите узнать расстояние.'}</p></div>}
+  return <section className="map-camera" aria-label="Замер по фото">
+    {!ready ? <div className="photo-intro"><Camera size={36} aria-hidden="true" /><h2>От снимка к фото</h2>
+      <p>Сначала отметьте своё место и второй берег на карте. Расстояние появится сразу.</p>
+      <Button onClick={onChooseMap}>Измерить на карте</Button>
+      <p>Для выбора точки на фото отметьте четыре узнаваемые точки кромки воды — по две на каждом берегу.</p>
+      <Button tone="quiet" onClick={onPrepareArea}>Подготовить участок для фото</Button>
+    </div> : <>
+      <div className="photo-heading"><strong>{photo ? points.length < 4 ? `Совместите точку ${points.length + 1} из 4` : 'Выберите место на воде' : 'Снимите оба берега'}</strong>
+        <Button tone="quiet" onClick={onPrepareArea}>Участок</Button></div>
+      <p className="photo-instruction">{!photo ? 'Все четыре точки с карты должны быть видны. Снимайте обычной камерой 1× без панорамы.' : points.length < 4 ? 'Коснитесь той же точки кромки воды, что отмечена на карте. Порядок: ближняя слева → ближняя справа → дальняя справа → дальняя слева.' : 'Кадр зафиксирован. Расчёт действует только на воде внутри отмеченного участка.'}</p>
+      <AnchorGuide anchors={anchors} station={station} current={points.length} />
+      {photo && <Button tone="quiet" aria-pressed={zoomed} onClick={() => setZoomed(value => !value)}>{zoomed ? 'Уместить фото' : 'Увеличить фото 2×'}</Button>}
+      {photo ? <div className="photo-viewport"><canvas ref={canvas} width={photo.width} height={photo.height} className={`photo-canvas${zoomed ? ' photo-canvas--zoomed' : ''}`} tabIndex={0} role="button" aria-label="Фото участка. Отметьте точки кромки воды, затем цель" onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={event => pointerEnd(event)} onPointerCancel={event => pointerEnd(event, true)} onPointerLeave={event => { if (event.pointerType === 'mouse') pointerEnd(event, true) }} onContextMenu={event => event.preventDefault()}
+        onKeyDown={event => {
+          const movement: Record<string, PhotoPoint> = { ArrowLeft: { x: -.01, y: 0 }, ArrowRight: { x: .01, y: 0 }, ArrowUp: { x: 0, y: -.01 }, ArrowDown: { x: 0, y: .01 } }
+          if (movement[event.key]) { event.preventDefault(); const delta = movement[event.key]; const next = { x: Math.max(0, Math.min(1, cursor.x + delta.x)), y: Math.max(0, Math.min(1, cursor.y + delta.y)) }; setCursor(next); setPick(next) }
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(cursor) }
+        }} /></div> : <div className={`photo-preview photo-preview--${camera}`}><video ref={video} autoPlay playsInline muted aria-label="Изображение с камеры для наведения" />{camera === 'off' && <Camera size={48} aria-hidden="true" />}</div>}
+      {points.length === 4 && !project && <p className="photo-error" role="alert">Точки слишком близки, лежат на линии или пересекаются. Отмените последнюю и выберите шире.</p>}
+      {issue && <p className="photo-error" role="alert">{issue}</p>}
+      {distance !== null && <div className="photo-result" role="status"><strong>≈ {Math.round(distance)} м</strong><span>От вашего места · по привязке фото к карте</span><Button onClick={() => target && onTarget(target)}>Показать цель на карте</Button></div>}
+      <div className="photo-actions">
+        {photo ? <><Button tone="quiet" onClick={() => { setPoints(points.slice(0, -1)); setIssue('') }} disabled={!points.length}>Отменить точку</Button><Button tone="quiet" onClick={() => { setPhoto(null); setZoomed(false); setIssue('') }}>Новый кадр</Button></>
+          : camera === 'on' ? <><Button onClick={freeze}>Зафиксировать кадр</Button><Button tone="quiet" onClick={stopCamera}>Выключить камеру</Button></>
+            : camera === 'requesting' ? <Button tone="quiet" onClick={stopCamera}>Отменить запрос камеры</Button> : <Button onClick={startCamera}>Включить камеру</Button>}
+        {!photo && camera === 'off' && <label className="button button--quiet photo-file">Сделать / открыть фото<input type="file" accept="image/*" capture="environment" onChange={event => { void openPhoto(event) }} /></label>}
       </div>
-      <div className="camera-stage__actions">
-        {xr.support === 'checking' && <p className="camera-stage__hint" role="status">Проверяем возможность измерения…</p>}
-        {xr.support === 'supported' && <Button type="button" onClick={() => { stopPreview(); setSavedInSession(null); if (overlayRoot.current) void xr.start(overlayRoot.current) }}>Измерить камерой</Button>}
-        {xr.support === 'unsupported' && <p className="camera-stage__hint" role="status">Этот браузер не передаёт расстояние до объектов.</p>}
-        {xr.phase === 'off' && xr.issue && <p className="camera-stage__hint" role="alert">{xr.issue}</p>}
-        {xr.support === 'unsupported' && onChooseMap && <Button type="button" onClick={onChooseMap}>Выбрать на снимке</Button>}
-        {camera === 'on' ? <Button tone="quiet" type="button" onClick={stopPreview}>Выключить камеру</Button>
-          : camera === 'requesting' ? <Button tone="quiet" type="button" onClick={stopPreview}>Отменить запрос камеры</Button>
-            : <Button tone="quiet" type="button" onClick={startPreview}>Включить камеру</Button>}
-        {xr.support === 'unsupported' && <small className="camera-stage__hint">Камера только для наведения.</small>}
-        {xr.support !== 'unsupported' && onChooseMap && <button type="button" className="camera-stage__link" onClick={onChooseMap}>Выбрать на снимке</button>}
-      </div>
-    </div>
-    {lastRange && <div className="camera-last-range" role="status"><span>Последний сохранённый замер</span><strong>≈{metres(lastRange.distanceM)}</strong>
-      <small>Горизонтальное расстояние · {origin(lastRange.source)} · {new Date(lastRange.measuredAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</small></div>}
-    <Sheet open={settingsOpen} onOpenChange={setSettingsOpen} title="Настройки наведения">
-      <div className="camera-sheet">
-        <p className="camera-sheet__state">{sensor === 'on' ? 'Ориентация включена' : sensor === 'denied' ? 'Датчик недоступен · ручное наведение' : 'Ручное наведение'}</p>
-        {sensor !== 'on' ? <Button tone="quiet" type="button" onClick={startSensor}>Включить ориентацию</Button>
-          : <Button tone="quiet" type="button" onClick={() => { setSensor('off'); setAlphaZero(null) }}>Ручное наведение</Button>}
-        <details className="camera-sheet__guidance"><summary>Наведение на цель по карте</summary>
-          {sensor === 'on' && (planeHeading === null || alphaZero === null) && <p className="map-hint" role="status">{planeHeading === null ? 'Нет свежего направления камеры. Держите телефон вертикально.' : 'Наведите камеру на сохранённый ориентир и подтвердите совмещение.'}</p>}
-          {sensor === 'on' && referenceBearing !== null && planeHeading !== null && <Button tone="quiet" type="button" onClick={() => setAlphaZero(planeHeading)}><Crosshair size={18} aria-hidden="true" />Совместить с ориентиром</Button>}
-          {referenceBearing !== null && sensor !== 'on' && <label className="camera-sheet__manual">Поворот от ориентира вручную: {manualBearing}°<input type="range" min="-180" max="180" value={manualBearing} onChange={event => setManualBearing(Number(event.target.value))} /></label>}
-          <p className="map-hint">{targetBearing === null ? 'Для наведения по карте сохраните станцию и цель. ' : referenceBearing === null ? 'Для ручного наведения сохраните ориентир на снимке. ' : ''}Направление приблизительное и не привязывает цель к пикселю воды.</p>
-        </details>
-      </div>
-    </Sheet>
-    {overlayHost && createPortal(<div ref={overlayRoot} className={`camera-xr${xrOpen ? ' camera-xr--open' : ''}`} aria-hidden={!xrOpen}>
-      {xrOpen && <><div className="camera-xr__top"><span>Измерение камерой</span><button type="button" onClick={xr.stop}>Закрыть</button></div>
-        <div className="camera-xr__cross" aria-hidden="true" />
-        <div className="camera-xr__bottom" aria-live="polite">
-          {xr.phase === 'requesting' ? <p>Открываем измерение…</p> : xr.phase === 'shore' ? <>
-            <p>Покажите границу берега и воды поблизости.</p>
-            {xr.issue && <p className="camera-xr__issue">{xr.issue}</p>}
-            <button type="button" className="camera-xr__primary" disabled={!xr.shoreReady} onClick={xr.confirmShore}>Это граница воды</button>
-            <button type="button" className="camera-xr__secondary" onClick={xr.cancelShore}>Отмена</button>
-          </> : <>
-            {xr.result ? <><span>{xr.result.source === 'surface' ? 'До поверхности по горизонтали' : 'По уровню воды'}</span><strong>≈{metres(xr.result.distanceM)}</strong></>
-              : <p>{xr.issue ?? 'До этой точки пока нет надёжной оценки. Удерживайте прицел неподвижно.'}</p>}
-            {savedInSession && <small role="status">Сохранено ≈{metres(savedInSession.distanceM)}</small>}
-            {xr.result && <button type="button" className="camera-xr__primary" onClick={saveRange}>Сохранить расстояние</button>}
-            {!xr.result && onChooseMap && <button type="button" className="camera-xr__primary" onClick={() => { xr.stop(); onChooseMap() }}>Выбрать на снимке</button>}
-            <button type="button" className="camera-xr__secondary" onClick={() => { setSavedInSession(null); xr.beginShore() }}>Уточнить по берегу</button>
-          </>}
-          {xr.issue && xr.result && <p className="camera-xr__issue">{xr.issue}</p>}
-        </div></>}
-    </div>, overlayHost)}
-  </div>
+      <p className="photo-note">Оценка по плоскости воды. Точность зависит от снимка, выбора одинаковых точек и уровня воды. Глубину и траекторию груза фото не измеряет.</p>
+    </>}
+  </section>
 }

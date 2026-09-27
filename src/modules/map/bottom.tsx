@@ -6,6 +6,9 @@ import { distanceMeters, localMeters } from './geometry'
 import { convexHull, estimateDepth } from './depth-model'
 import { BottomCanvas, type DepthPlot } from './bottom-canvas'
 import { DepthSources } from './depth-sources'
+import { areaAt } from './enc-chart'
+import { useEncChart } from './enc-chart-store'
+import { useMapTools } from './map-tools'
 
 export type DepthPoint = { id: string; position: Coordinate; meters: number; observedAt: string; source: string }
 export function observedDepths(casts: Cast[]): DepthPoint[] {
@@ -13,19 +16,27 @@ export function observedDepths(casts: Cast[]): DepthPoint[] {
     ? [{ id: cast.id, position: cast.depthPosition, meters: cast.depth.meters, observedAt: cast.depth.observedAt, source: cast.depth.source }] : [])
 }
 const SIZE = 320
-export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: ChartDataset[]; station: Coordinate | null }) {
+export function BottomView({ casts, charts, station, target, viewCenter }: { casts: Cast[]; charts: ChartDataset[]; station: Coordinate | null; target?: Coordinate | null; viewCenter?: Coordinate }) {
   const [mode, setMode] = useState<'plan' | 'profile' | 'space'>('plan')
   const [rotation, setRotation] = useState(35)
-  const [dataset, setDataset] = useState('own')
+  const dataset = useMapTools(state => state.dataset)
+  const setDataset = useMapTools(state => state.selectDataset)
+  const openedEnc = useEncChart(state => state.chart)
+  const enc = dataset === 'enc-current' ? openedEnc : null
   const [model, setModel] = useState(false)
   const [gap, setGap] = useState(25)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const chart = charts.find(item => item.id === dataset)
   const modeName = mode === 'plan' ? 'Сверху' : mode === 'profile' ? 'По дальности' : '3D схема'
-  const allPoints: DepthPoint[] = useMemo(() => chart ? chart.points.map((point, i) => ({ id: String(i), position: point.position, meters: point.depthM, source: chart.source, observedAt: chart.importedAt })) : observedDepths(casts), [chart, casts])
+  const focus = target ?? station ?? viewCenter ?? enc?.contours[0]?.positions[0] ?? enc?.soundings[0]?.position ?? null
+  const allPoints: DepthPoint[] = useMemo(() => enc ? [
+    ...enc.soundings.map((point, i) => ({ id: `s${i}`, position: point.position, meters: point.depthM, source: 'Промер ENC', observedAt: '' })),
+    ...enc.contours.flatMap((line, i) => line.positions.filter((_, j) => j % 4 === 0).map((position, j) => ({ id: `c${i}-${j}`, position, meters: line.depthM, source: 'Изобата ENC', observedAt: '' }))),
+  ].filter(point => !focus || distanceMeters(focus, point.position) <= 200).sort((a, b) => focus ? distanceMeters(focus, a.position) - distanceMeters(focus, b.position) : 0).slice(0, 500)
+    : chart ? chart.points.map((point, i) => ({ id: String(i), position: point.position, meters: point.depthM, source: chart.source, observedAt: chart.importedAt })) : observedDepths(casts), [enc, chart, casts, focus])
   // Bound the local preview and interpolation work; larger datasets remain intact in storage.
   const points = useMemo(() => allPoints.slice(0, 1000), [allPoints])
-  const origin = chart ? points[0]?.position : station ?? points[0]?.position
+  const origin = enc ? focus : chart ? points[0]?.position : station ?? points[0]?.position
   const positions = useMemo(() => origin ? points.map(point => ({ ...point, ...localMeters(origin, point.position) })) : [], [origin, points])
   const maxAxis = Math.max(20, ...positions.map(point => Math.max(Math.abs(point.east), Math.abs(point.north)))) * 1.2
   const maxDepth = Math.max(2, ...points.map(point => point.meters))
@@ -36,7 +47,7 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
     y: 100 + (east * Math.sin(angle) + north * Math.cos(angle)) / maxAxis * 45 + depth / maxDepth * 125,
   })
   const maxDistance = Math.max(20, ...points.map(point => origin ? distanceMeters(origin, point.position) : 0))
-  const hull = useMemo(() => model ? convexHull(positions) : [], [model, positions])
+  const hull = useMemo(() => model && !enc ? convexHull(positions) : [], [model, enc, positions])
   const step = maxAxis * 2 / 24
   // Rotation changes projection only; avoid repeating spatial interpolation on every drag frame.
   const cells = useMemo(() => {
@@ -51,6 +62,18 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
   }, [model, hull, mode, maxAxis, step, positions, gap])
   const plane = [[-maxAxis, -maxAxis], [maxAxis, -maxAxis], [maxAxis, maxAxis], [-maxAxis, maxAxis]].map(([east, north]) => project3(east, north, 0))
   const color = (depth: number) => `hsl(192 32% ${83 - depth / maxDepth * 37}%)`
+  const encLines = [] as DepthPlot['lines']
+  if (enc && origin && mode !== 'profile') {
+    for (const line of enc.contours) {
+      for (let i = 1; i < line.positions.length; i++) {
+        const a = localMeters(origin, line.positions[i - 1]); const b = localMeters(origin, line.positions[i])
+        if (Math.max(Math.abs(a.east), Math.abs(a.north), Math.abs(b.east), Math.abs(b.north)) > maxAxis) continue
+        encLines.push({ from: mode === 'space' ? project3(a.east, a.north, line.depthM) : xy(a.east, a.north), to: mode === 'space' ? project3(b.east, b.north, line.depthM) : xy(b.east, b.north), color: '#277e91' })
+        if (encLines.length >= 1800) break
+      }
+      if (encLines.length >= 1800) break
+    }
+  }
   const plot: DepthPlot = {
     points: positions.map(point => ({ ...point, ...(mode === 'plan' ? xy(point.east, point.north)
       : mode === 'space' ? project3(point.east, point.north, point.meters)
@@ -62,18 +85,25 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
       : mode === 'profile' ? [{ from: { x: 27, y: 45 }, to: { x: 27, y: 275 }, dashed: true }, { from: { x: 27, y: 45 }, to: { x: 300, y: 45 } }]
         : positions.map(point => ({ from: project3(point.east, point.north, 0), to: project3(point.east, point.north, point.meters), dashed: true })),
     labels: mode === 'plan' ? [{ at: { x: 160, y: 18 }, text: 'С' }, { at: { x: 15, y: 292 }, text: `Ширина ≈ ${Math.round(maxAxis * 2)} м` }]
-      : mode === 'profile' ? [{ at: { x: 30, y: 30 }, text: `${chart ? 'Ноль карты' : 'Поверхность воды'} · 0 м` }, { at: { x: 30, y: 292 }, text: `0 — ${Math.round(maxDistance)} м от ${chart ? 'первой точки' : 'станции'}` }] : [],
-    station: mode === 'plan' && !chart && station ? xy(0, 0) : null,
+      : mode === 'profile' ? [{ at: { x: 30, y: 30 }, text: `${chart || enc ? 'Ноль карты' : 'Поверхность воды'} · 0 м` }, { at: { x: 30, y: 292 }, text: `0 — ${Math.round(maxDistance)} м от ${chart ? 'первой точки' : enc ? 'выбранной точки' : 'станции'}` }] : [],
+    station: mode === 'plan' && !chart && !enc && station ? xy(0, 0) : null,
+    target: target && origin && mode !== 'profile' ? (() => {
+      const at = localMeters(origin, target)
+      return Math.max(Math.abs(at.east), Math.abs(at.north)) <= maxAxis ? mode === 'space' ? project3(at.east, at.north, 0) : xy(at.east, at.north) : null
+    })() : null,
   }
+  plot.lines.push(...encLines)
+  const targetArea = enc && target ? areaAt(enc, target) : null
   return <section className="map-bottom">
     <div className="map-bottom__toolbar">
-      <div className="map-bottom__summary"><strong>{modeName}</strong><span>{chart?.name ?? 'Мои промеры этой рыбалки'}</span></div>
+      <div className="map-bottom__summary"><strong>{modeName}</strong><span>{enc?.name ?? chart?.name ?? 'Мои промеры этой рыбалки'}</span></div>
       {points.length > 0 && <DepthSources />}
       <button type="button" className="map-bottom__settings" aria-label="Настройки рельефа" title="Настройки рельефа" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={21} /></button>
     </div>
-    {!points.length ? <div className="map-bottom__empty"><strong>Добавьте первые глубины</strong><p>Сохраните промер с глубиной и её точкой в журнале или импортируйте свои точки GeoJSON.</p><DepthSources text /><p className="map-hint">Нашли официальный лист Одры для района Цегелинки — его можно открыть отдельно.</p></div> : <>
+    {targetArea && <p className="depth-summary">Цель на карте: область глубин {targetArea.shallowM?.toFixed(1) ?? '?'}–{targetArea.deepM?.toFixed(1) ?? '?'} м от нуля карты. Это диапазон области, не точная глубина в точке.</p>}
+    {!points.length ? <div className="map-bottom__empty"><strong>{enc ? 'Рядом нет изобат или промеров' : 'Добавьте первые глубины'}</strong><p>{enc ? 'Проверьте выбранное место на снимке. Область глубин может быть указана без точек для объёмной схемы.' : 'Сохраните промер с глубиной и её точкой в журнале или откройте ENC/GeoJSON.'}</p><DepthSources text /></div> : <>
       <BottomCanvas key={`${dataset}:${mode}`} plot={plot} label={`${mode === 'plan' ? 'План' : mode === 'profile' ? 'Глубина по дальности' : 'Объёмная схема'} ${points.length} точек глубин`} rotate={mode === 'space' ? degrees => setRotation(current => (current + degrees + 360) % 360) : undefined} />
-      <p className="depth-summary">{points.length} из {allPoints.length} точек{mode === 'space' ? ` · вертикаль ×${(125 * maxAxis / (104 * maxDepth)).toFixed(1)}` : ''}{mode === 'profile' ? ' · разные направления, не разрез дна' : ''}{model && mode !== 'profile' ? cells.length ? ' · цвет — оценка поверхности' : ' · для поверхности мало данных' : ''}</p>
+      <p className="depth-summary">{enc ? `${encLines.length} отрезков изобат · ${points.length} опорных точек` : `${points.length} из ${allPoints.length} точек`}{mode === 'space' ? ` · вертикаль ×${(125 * maxAxis / (104 * maxDepth)).toFixed(1)}` : ''}{mode === 'profile' ? ' · разные направления, не разрез дна' : ''}{model && !enc && mode !== 'profile' ? cells.length ? ' · цвет — оценка поверхности' : ' · для поверхности мало данных' : ''}</p>
     </>}
     <Sheet open={settingsOpen} onOpenChange={setSettingsOpen} title="Настройки рельефа">
       <fieldset className="map-bottom__choices"><legend>Вид</legend>
@@ -82,11 +112,13 @@ export function BottomView({ casts, charts, station }: { casts: Cast[]; charts: 
       <fieldset className="map-bottom__choices"><legend>Источник глубин</legend>
         <label><input type="radio" name="bottom-source" checked={dataset === 'own'} onChange={() => { setDataset('own'); setModel(false) }} /><span>Мои промеры этой рыбалки</span></label>
         {charts.map(item => <label key={item.id}><input type="radio" name="bottom-source" checked={dataset === item.id} onChange={() => { setDataset(item.id); setModel(false) }} /><span>{item.name}</span></label>)}
+        {openedEnc && <label><input type="radio" name="bottom-source" checked={dataset === openedEnc.id} onChange={() => { setDataset(openedEnc.id); setModel(false) }} /><span>{openedEnc.name} · ENC в этой вкладке</span></label>}
       </fieldset>
+      {enc && <p className="map-hint">{enc.source} · отсчёт: {enc.verticalDatum}. Области показывают диапазон, изобаты — линию точной картографической отметки. Они не равны сегодняшней глубине от поверхности воды.</p>}
       {chart && <p className="map-hint">{chart.source} · отсчёт: {chart.verticalDatum}. Карточные значения показаны отдельно от сегодняшних измерений.</p>}
-      <p className="map-hint">Положение глубин подтверждено пользователем; точность координат не оценена. На экране до 1000 точек, весь набор остаётся в журнале. В 3D вертикальный масштаб увеличен для чтения глубин; коэффициент указан под схемой.</p>
+      <p className="map-hint">{enc ? 'ENC открыт только в этой вкладке; исходный файл не сохраняется. На схеме до 500 точек изобат возле выбранного места.' : 'Положение глубин подтверждено пользователем; точность координат не оценена. На экране до 1000 точек, весь набор остаётся в журнале.'} В 3D вертикальный масштаб увеличен для чтения глубин; коэффициент указан под схемой.</p>
       {mode === 'space' && <label className="map-bottom__rotation">Поворот схемы: {Math.round(rotation)}°<input type="range" min="0" max="360" value={rotation} onChange={event => setRotation(Number(event.target.value))} /></label>}
-      {points.length >= 3 && <div className="map-bottom__model"><strong>Предполагаемая поверхность</strong>
+      {!enc && points.length >= 3 && <div className="map-bottom__model"><strong>Предполагаемая поверхность</strong>
         <p className="map-hint">Взвешенная оценка по соседним глубинам внутри области точек. Берега автоматически не распознаются. Включайте только для одного водного участка с сопоставимым уровнем воды.</p>
         <label className="survey-check"><input type="checkbox" checked={model} onChange={event => setModel(event.target.checked)} />Точки одного водного участка и уровня воды — показать оценку</label>
         {model && <><label className="map-bottom__rotation">Искать соседей не дальше {gap} м<input type="range" min="5" max="100" step="5" value={gap} onChange={event => setGap(Number(event.target.value))} /></label><p className="map-hint">Цветные участки — предположение, не измерения. Пустые места не заполнены: данных недостаточно. Числовая погрешность не оценена.</p></>}

@@ -8,10 +8,11 @@ export type PlotPoint = DepthPoint & XY
 export type DepthPlot = {
   points: PlotPoint[]
   cells: { corners: XY[]; color: string }[]
-  lines: { from: XY; to: XY; dashed?: boolean }[]
+  lines: { from: XY; to: XY; dashed?: boolean; color?: string }[]
   plane: XY[]
   labels: { at: XY; text: string }[]
   station: XY | null
+  target?: XY | null
 }
 type Viewport = { scale: number; x: number; y: number }
 const initialView: Viewport = { scale: 1, x: 0, y: 0 }
@@ -72,6 +73,7 @@ export function BottomCanvas({ plot, label, rotate }: { plot: DepthPlot; label: 
     context.strokeStyle = '#a9bcb0'
     context.lineWidth = unit
     for (const line of plot.lines) {
+      context.strokeStyle = line.color ?? '#a9bcb0'
       context.setLineDash(line.dashed ? [4 * unit, 5 * unit] : [])
       context.beginPath(); context.moveTo(line.from.x, line.from.y); context.lineTo(line.to.x, line.to.y); context.stroke()
     }
@@ -94,6 +96,11 @@ export function BottomCanvas({ plot, label, rotate }: { plot: DepthPlot; label: 
     if (plot.station) {
       context.beginPath(); context.arc(plot.station.x, plot.station.y, 6 * unit, 0, Math.PI * 2)
       context.fillStyle = '#18594a'; context.fill()
+    }
+    if (plot.target) {
+      context.beginPath(); context.arc(plot.target.x, plot.target.y, 7 * unit, 0, Math.PI * 2)
+      context.fillStyle = '#fff'; context.fill(); context.lineWidth = 2 * unit; context.strokeStyle = '#d76640'; context.stroke()
+      text('Цель', plot.target.x + 11 * unit, plot.target.y - 9 * unit)
     }
     for (const item of plot.labels) text(item.text, item.at.x, item.at.y)
   }, [plot, size, view, selected, factor, offset.x, offset.y])

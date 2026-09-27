@@ -15,7 +15,7 @@ test('a calibrated cast survives reload with turns, mark, and confirmed line len
   await page.locator('.survey-metric').nth(1).click()
   await page.getByRole('textbox', { name: /Угол от ориентира/ }).fill('12')
   await page.getByRole('button', { name: 'Использовать угол' }).click()
-  await expect(page.locator('svg .sector-preview')).toBeVisible()
+  await expect(page.locator('canvas.survey-sector')).toBeVisible()
   await page.getByRole('button', { name: 'Начать промер' }).click()
   await page.getByRole('button', { name: 'Коснулся воды' }).click()
   await expect(page.getByRole('timer')).toBeVisible()
@@ -56,6 +56,29 @@ test('a calibrated cast survives reload with turns, mark, and confirmed line len
   await page.getByRole('button', { name: 'Пропустить таймер' }).click()
   await expect(page.locator('.survey-counter-value strong')).toHaveText('0')
   await expect(page.locator('.survey-mark-list li')).toHaveCount(0)
+})
+
+test('dragging on the sector updates the aim without selecting text; keyboard remains usable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('./')
+  const canvas = page.locator('canvas.survey-sector')
+  const box = await canvas.boundingBox()
+  const dock = await page.locator('.survey-dock').boundingBox()
+  expect(box).not.toBeNull()
+  expect(dock).not.toBeNull()
+  const originX = box!.x + box!.width / 2
+  const originY = dock!.y - 10
+  await page.mouse.move(originX + 20, originY - 65)
+  await page.mouse.down()
+  await page.mouse.move(originX + 85, originY - 120, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.locator('.survey-metric').nth(1)).toContainText('35°')
+  await expect(page.locator('.survey-metric').first()).toContainText('м')
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe('')
+
+  await canvas.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.survey-metric').nth(1)).toContainText('36°')
 })
 
 test('fall interrupted by navigation or reload keeps draft; partial retrieval keeps distance unknown', async ({ page }) => {
