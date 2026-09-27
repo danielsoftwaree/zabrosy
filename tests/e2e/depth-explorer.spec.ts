@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('empty depth view opens the official Odra chart without inventing depths', async ({ page }) => {
   await page.goto('./')
+  await expect(page.getByRole('button', { name: 'Начать промер' })).toBeEnabled()
   await page.getByRole('button', { name: '3D', exact: true }).click()
   await page.getByRole('button', { name: 'Карты глубин Одры', exact: true }).click()
   const sheet = page.getByRole('dialog', { name: 'Карты Одры · Щецин' })
@@ -20,6 +21,7 @@ test('depth canvas selects observations and rotates the 3D view by dragging', as
   await page.getByRole('button', { name: 'Сохранить точки' }).click()
   await expect(page.getByText('Карта глубин сохранена локально.')).toBeVisible()
   await page.goto('./')
+  await expect(page.getByRole('button', { name: 'Начать промер' })).toBeEnabled()
   await page.getByRole('button', { name: '3D', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки рельефа' }).click()
   let sheet = page.getByRole('dialog', { name: 'Настройки рельефа' })

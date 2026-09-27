@@ -192,7 +192,8 @@ export function MapPanel({ view: controlledView, children }: Props) {
         </div>
         <p className="field-map__source">{provider.attribution}</p>
       </>}
-      {activeView === 'camera' && <CameraView active targetBearing={targetBearing} referenceBearing={session?.station.referenceBearingDeg ?? null} targetDistance={targetDistance} />}
+      {activeView === 'camera' && <CameraView active targetBearing={targetBearing} referenceBearing={session?.station.referenceBearingDeg ?? null} targetDistance={targetDistance}
+        onChooseMap={() => { setDrawer('survey'); if (embedded) useFieldUi.getState().setView('aerial'); else setInternalView('aerial') }} />}
       {activeView === 'bottom' && <BottomView station={station} casts={visibleCasts} charts={data.charts} />}
       {loading && <p className="map-panel__status" role="status">Загружаем локальные данные…</p>}
       {error && <p className="map-panel__status map-error" role="alert">{error}</p>}

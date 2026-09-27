@@ -201,7 +201,7 @@ test('camera refusal keeps a saved target available for manual guidance', async 
   await page.getByRole('button', { name: 'Сохранить цель' }).click()
   await page.getByRole('button', { name: 'Камера' }).click()
   await page.locator('.camera-stage').getByRole('button', { name: 'Включить камеру' }).click()
-  await expect(page.getByText('Камера недоступна. Можно наводиться вручную.')).toBeVisible()
+  await expect(page.getByText('Камера недоступна. Проверьте разрешение и повторите.')).toBeVisible()
   await page.locator('.camera-stage').getByRole('button', { name: 'Настройки наведения' }).click()
   const settings = page.getByRole('dialog', { name: 'Настройки наведения' })
   await settings.locator('summary').filter({ hasText: 'Наведение на цель по карте' }).click()
@@ -234,7 +234,7 @@ test('camera tracks stop on view switch, route navigation, and tab hiding', asyn
         return stream
       },
     } })
-    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: () => Promise.reject(new DOMException('Autoplay blocked', 'NotAllowedError')) })
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: () => Promise.resolve() })
   })
   const counts = () => page.evaluate(() => (window as Window & { __cameraProbe: { requests: number; stops: number } }).__cameraProbe)
 
@@ -281,7 +281,7 @@ test('home field views keep the active cast and release camera on every switch',
         return stream
       },
     } })
-    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: () => Promise.reject(new DOMException('Autoplay blocked', 'NotAllowedError')) })
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', { configurable: true, value: () => Promise.resolve() })
   })
   const counts = () => page.evaluate(() => (window as Window & { __cameraProbe: { requests: number; stops: number } }).__cameraProbe)
 

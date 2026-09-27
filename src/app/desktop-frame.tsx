@@ -11,7 +11,7 @@ export function DesktopFrame() {
       className="desktop-frame"
       src={src}
       title="Маркер — мобильное приложение"
-      allow="camera; geolocation; accelerometer; gyroscope; magnetometer; screen-wake-lock"
+      allow="camera; geolocation; accelerometer; gyroscope; magnetometer; screen-wake-lock; xr-spatial-tracking; fullscreen"
     />
     <a className="desktop-frame__open" href={src} target="_blank" rel="noopener noreferrer">Открыть отдельно</a>
   </div>
